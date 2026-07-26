@@ -48,6 +48,9 @@ const appState = {
   challengeQuestionNumber: 1,
   challengeMistakeThisPuzzle: false,
   challengeFinished: false,
+  challengeGracePeriodActive: false,
+  challengeGraceCountdown: null,
+  challengeLastBeepSecond: null,
   threeQuestionProgress: 0,
   threeQuestionTimes: [],
   challengeStats: { clearCount: 0, correctCells: 0, noMistakeClears: 0, noMistakeStreak: 0, bestNoMistakeStreak: 0 },
@@ -126,6 +129,9 @@ function bindGlobalEvents() {
   window.addEventListener('pointermove', handlePointerMove, { passive: false });
   window.addEventListener('pointerup', handlePointerUp);
   window.addEventListener('pointercancel', handlePointerCancel);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) cancelActiveDrag();
+  });
 }
 
 function handleClick(event) {
@@ -154,7 +160,13 @@ function handleClick(event) {
     case 'number': { const value = Number(actionEl.dataset.value); handleNumberTap(value); break; }
     case 'reset': resetBoard(); break;
     case 'hint': useHint(); break;
-    case 'submit': submitAnswer(); break;
+    case 'submit':
+      // submitAnswer()'s own paths (startReveal / onWrongAnswer) already
+      // render; falling through to the generic render() below would
+      // immediately re-render the just-shown reveal screen a second time,
+      // restarting its per-item fade-in animation from scratch.
+      submitAnswer();
+      return;
     case 'next-puzzle': startGame(); break;
     case 'play-again': if (appState.mode === 'challenge') startChallenge(); else startGame(); break;
     case 'title-again': clearIntervalsOnly(); appState.screen = 'title'; break;
@@ -171,6 +183,12 @@ function handleClick(event) {
 
 function handlePointerDown(event) {
   if (appState.screen !== 'game') return;
+  // A drag is already being tracked (e.g. a second finger touched the
+  // screen while the first was mid-drag) - starting a new one here would
+  // overwrite dragCtx and orphan the first pointer's ghost element, since
+  // its pointerId would no longer match anything when it's eventually
+  // released. Ignore any extra pointers until the current drag finishes.
+  if (dragCtx) return;
   ensureAudio();
   const chipEl = event.target.closest('.number-chip');
   const cellEl = event.target.closest('.board-cell');
@@ -230,9 +248,16 @@ function handlePointerUp(event) {
 
 function handlePointerCancel(event) {
   if (dragCtx && dragCtx.pointerId === event.pointerId) {
-    if (dragCtx.ghostEl) dragCtx.ghostEl.remove();
-    dragCtx = null;
+    cancelActiveDrag();
   }
+}
+
+// Safety net for the rare case pointerup/pointercancel never arrives (e.g.
+// the tab is backgrounded or an OS gesture takes over mid-drag) - without
+// this the ghost chip could otherwise be left floating on screen forever.
+function cancelActiveDrag() {
+  if (dragCtx && dragCtx.ghostEl) dragCtx.ghostEl.remove();
+  dragCtx = null;
 }
 
 // --- Board interaction (tap mode) ---
@@ -419,12 +444,50 @@ function stopTimer() {
 function startUiTicker() {
   stopUiTicker();
   appState.uiTickTimer = setInterval(() => {
-    if (appState.screen === 'game') render();
+    if (appState.screen === 'game') updateLiveTimerBadge();
   }, 500);
 }
 
 function stopUiTicker() {
   if (appState.uiTickTimer) { clearInterval(appState.uiTickTimer); appState.uiTickTimer = null; }
+}
+
+// Patches just the timer badge's text/urgency in place instead of calling
+// the full render(). A full render() replaces the entire game screen's
+// innerHTML (including every button), which - when done every 250-500ms via
+// the tickers below - creates a recurring race window where a tap/click
+// straddling a re-render can land on an element that just got swapped out
+// from under it, making buttons like 解答する or もどる seem unresponsive.
+function getChallengeRemainingSeconds() {
+  if (appState.challengeGracePeriodActive) {
+    return appState.challengeGraceCountdown ? appState.challengeGraceCountdown.getRemainingSeconds() : 20;
+  }
+  return appState.challengeCountdown ? appState.challengeCountdown.getRemainingSeconds() : 180;
+}
+
+// Beeps once per whole second while the main 3-minute countdown is inside
+// its last 10 seconds. Guarded by challengeLastBeepSecond so the 250ms
+// interval tick doesn't fire it more than once per second.
+function checkChallengeBeep(remainingSeconds) {
+  const wholeSecond = Math.ceil(remainingSeconds);
+  if (wholeSecond > 0 && wholeSecond < 10 && wholeSecond !== appState.challengeLastBeepSecond) {
+    appState.challengeLastBeepSecond = wholeSecond;
+    playChallengeBeepSound();
+  }
+}
+
+function updateLiveTimerBadge() {
+  const badge = document.querySelector('.game-card nav.topbar .badge.timer');
+  if (!badge) return;
+  if (appState.mode === 'challenge') {
+    const remaining = getChallengeRemainingSeconds();
+    const urgency = remaining <= 10 ? 'danger' : remaining <= 30 ? 'warn' : '';
+    badge.textContent = `残り ${formatLiveTime(remaining)}`;
+    badge.classList.remove('warn', 'danger');
+    if (urgency) badge.classList.add(urgency);
+  } else if (appState.mode === 'time-attack' || appState.mode === 'three-questions') {
+    badge.textContent = formatLiveTime(appState.timer.getElapsedSeconds());
+  }
 }
 
 function startCountdown(onComplete) {
@@ -490,6 +553,9 @@ function startChallenge() {
   appState.challengeQuestionNumber = 1;
   appState.challengeMistakeThisPuzzle = false;
   appState.challengeFinished = false;
+  appState.challengeGracePeriodActive = false;
+  appState.challengeGraceCountdown = null;
+  appState.challengeLastBeepSecond = null;
   appState.challengeStats = { clearCount: 0, correctCells: 0, noMistakeClears: 0, noMistakeStreak: 0, bestNoMistakeStreak: 0 };
   appState.currentPuzzle = getNextPuzzle('standard');
   applyPuzzleState(createPuzzleState(appState.currentPuzzle, 'standard', getChallengeFixedCount(appState.challengeQuestionNumber)));
@@ -498,10 +564,24 @@ function startChallenge() {
     appState.screen = 'game';
     appState.challengeCountdown.start();
     appState.challengeTimer = setInterval(() => {
-      if (appState.screen === 'game' && appState.challengeCountdown.isFinished() && !appState.challengeFinished) {
-        finishChallenge();
+      if (appState.screen !== 'game') return;
+      if (!appState.challengeGracePeriodActive) {
+        if (appState.challengeCountdown.isFinished()) {
+          // Main time's up: the puzzle on screen becomes the final one, with
+          // a 20-second grace window to still solve it before time-up.
+          appState.challengeGracePeriodActive = true;
+          appState.challengeGraceCountdown = new CountdownTimer(20);
+          appState.challengeGraceCountdown.start();
+          appState.message = '最終問題！';
+          render();
+        } else {
+          checkChallengeBeep(appState.challengeCountdown.getRemainingSeconds());
+          updateLiveTimerBadge();
+        }
+      } else if (appState.challengeGraceCountdown.isFinished()) {
+        triggerChallengeTimeUp();
       } else {
-        render();
+        updateLiveTimerBadge();
       }
     }, 250);
   });
@@ -605,7 +685,9 @@ function finishCorrectFlow() {
     } else {
       stats.noMistakeStreak = 0;
     }
-    if (appState.challengeCountdown.isFinished()) {
+    if (appState.challengeGracePeriodActive) {
+      // The final problem (granted after the main clock ran out) was solved
+      // in time - the run ends here regardless of the grace window.
       finishChallenge();
       return;
     }
@@ -629,6 +711,16 @@ function onWrongAnswer() {
   render();
 }
 
+// The 20-second grace window on the final problem ran out without a correct
+// answer: show "時間切れ" (no board, so no more input can reach it) for a
+// beat, then wrap up the run.
+function triggerChallengeTimeUp() {
+  if (appState.challengeTimer) { clearInterval(appState.challengeTimer); appState.challengeTimer = null; }
+  appState.screen = 'time-up';
+  render();
+  setTimeout(() => { finishChallenge(); }, 1000);
+}
+
 function finishChallenge() {
   if (appState.challengeFinished) return;
   appState.challengeFinished = true;
@@ -650,6 +742,7 @@ function finishChallenge() {
     reachedFixedOne: stats.clearCount >= 5,
     isFirstEver,
   };
+  playChallengeResultFanfare();
   appState.screen = 'result';
   render();
 }
@@ -690,6 +783,19 @@ function playCorrectSound() {
   });
 }
 
+// A bigger fanfare for reaching the 3-minute challenge's result screen: a
+// longer rising run across two octaves, capped with a sustained chord.
+function playChallengeResultFanfare() {
+  const run = [523.25, 659.25, 783.99, 1046.5, 1318.51];
+  run.forEach((freq, index) => {
+    setTimeout(() => playTone(freq, 150, 'triangle'), index * 90);
+  });
+  const chordDelay = run.length * 90 + 60;
+  [1046.5, 1318.51, 1567.98].forEach((freq) => {
+    setTimeout(() => playTone(freq, 550, 'triangle'), chordDelay);
+  });
+}
+
 function playWrongSound() {
   playTone(240, 220, 'sine');
 }
@@ -723,6 +829,11 @@ function playCountdownTickSound() {
 function playCountdownGoSound() {
   playTone(700, 100, 'square');
   setTimeout(() => playTone(1000, 220, 'square'), 100);
+}
+
+// Once-per-second tick for the final 10 seconds of the 3-minute challenge.
+function playChallengeBeepSound() {
+  playTone(880, 90, 'square');
 }
 
 // --- Formatting ---
@@ -763,6 +874,7 @@ function render() {
     case 'records': renderRecords(); break;
     case 'settings': renderSettings(); break;
     case 'countdown': renderCountdown(); break;
+    case 'time-up': renderTimeUp(); break;
     case 'game': renderGame(); break;
     case 'reveal': renderReveal(); break;
     case 'result': renderResult(); break;
@@ -909,6 +1021,13 @@ function renderCountdown() {
     </div>`;
 }
 
+function renderTimeUp() {
+  appEl.innerHTML = `
+    <div class="countdown-overlay">
+      <div class="countdown-number time-up">時間切れ</div>
+    </div>`;
+}
+
 function renderGame() {
   const boardModeKey = getCurrentBoardModeKey();
   const board = getBoardDefinition(boardModeKey);
@@ -921,7 +1040,7 @@ function renderGame() {
 
   let timerHtml;
   if (appState.mode === 'challenge') {
-    const remaining = appState.challengeCountdown ? appState.challengeCountdown.getRemainingSeconds() : 180;
+    const remaining = getChallengeRemainingSeconds();
     const urgency = remaining <= 10 ? 'danger' : remaining <= 30 ? 'warn' : '';
     timerHtml = `<span class="badge timer ${urgency}">残り ${formatLiveTime(remaining)}</span>`;
   } else if (appState.mode === 'time-attack' || appState.mode === 'three-questions') {
@@ -948,7 +1067,6 @@ function renderGame() {
         ${progressBadge ? `<span class="badge">${progressBadge}</span>` : ''}
         ${timerHtml}
       </nav>
-      <p class="mode-label">${getBoardSize(boardModeKey) === '3x2' ? 'イージー 3×2' : 'スタンダード 3×3'}　${header}</p>
       ${renderBoardGrid(board.cols, board.rows, currentCols, currentRows, appState.boardValues.map((value, index) => {
         const row = Math.floor(index / board.cols);
         const col = index % board.cols;
@@ -969,6 +1087,7 @@ function renderGame() {
         ${hintButton}
         <button class="primary-btn" data-action="submit" ${allFilled ? '' : 'disabled'}>解答する</button>
       </div>
+      <p class="mode-label">${getBoardSize(boardModeKey) === '3x2' ? 'イージー 3×2' : 'スタンダード 3×3'}　${header}</p>
       <div class="message">${formatMessage(appState.message)}</div>
     </div>`;
 }
@@ -1038,7 +1157,6 @@ function renderResult() {
       <p class="small">${info.titleInfo.text}</p>
       <div class="list">
         <div>クリア数　　　　${stats.clearCount}問</div>
-        <div>正解したマス　　${stats.correctCells}マス</div>
         <div>ノーミスクリア　${stats.noMistakeClears}問</div>
         <div>最高連続正解　　${stats.bestNoMistakeStreak}問</div>
       </div>
