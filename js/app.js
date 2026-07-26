@@ -104,7 +104,7 @@ function setupBackgroundNumbers() {
     el.style.top = `${100 + Math.random() * 30}%`;
     el.style.fontSize = `${size}px`;
     el.style.color = palette[i % palette.length];
-    el.style.opacity = '0.18';
+    el.style.opacity = '0.32';
     el.style.animationDuration = `${duration}s`;
     el.style.animationDelay = `-${(Math.random() * duration).toFixed(2)}s`;
     container.appendChild(el);
@@ -942,15 +942,13 @@ function renderGame() {
     : '';
 
   appEl.innerHTML = `
-    <div class="card">
+    <div class="card game-card">
       <nav class="topbar">
         <button class="back" data-action="back">← もどる</button>
+        ${progressBadge ? `<span class="badge">${progressBadge}</span>` : ''}
         ${timerHtml}
       </nav>
-      <div class="mode-row">
-        <span class="mode-label">${getBoardSize(boardModeKey) === '3x2' ? 'イージー 3×2' : 'スタンダード 3×3'}　${header}</span>
-        ${progressBadge ? `<span class="badge">${progressBadge}</span>` : ''}
-      </div>
+      <p class="mode-label">${getBoardSize(boardModeKey) === '3x2' ? 'イージー 3×2' : 'スタンダード 3×3'}　${header}</p>
       ${renderBoardGrid(board.cols, board.rows, currentCols, currentRows, appState.boardValues.map((value, index) => {
         const row = Math.floor(index / board.cols);
         const col = index % board.cols;

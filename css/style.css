@@ -30,12 +30,15 @@ body.bg-numbers-active #bg-numbers { opacity: 1; }
 .small-btn { padding: 8px 12px; border-radius: 999px; }
 nav.topbar { display:flex; justify-content:space-between; align-items:center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .topbar .back { background: var(--accent-soft); color: var(--accent); border:none; padding:8px 12px; border-radius:999px; }
-.mode-label { font-size: 0.95rem; color: var(--muted); }
-.mode-row { display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap: wrap; margin: 0 0 10px; }
+.mode-label { font-size: 0.95rem; color: var(--muted); text-align: center; margin: 0 0 10px; }
+.game-card { padding: 14px 16px 16px; }
+.game-card nav.topbar { margin-bottom: 6px; }
+.game-card .mode-label { font-size: 0.75rem; margin: 0 0 6px; }
+.game-card .board-grid { margin: 8px 0 10px; }
 .badge { background: var(--accent-soft); color: var(--accent); border-radius:999px; padding:6px 10px; font-weight:700; }
 .board-grid { display:grid; gap: 10px; justify-content:center; align-items: stretch; margin: 14px 0 16px; }
 .group-label { display:flex; align-items:center; justify-content:center; background: var(--accent-soft); color: var(--accent); font-weight:800; font-size: 0.8rem; border-radius: 999px; padding: 6px 14px; white-space:nowrap; }
-.col-group-label { align-self: end; justify-self: center; margin-bottom: 6px; }
+.col-group-label { align-self: end; justify-self: center; margin-bottom: -6px; }
 .row-group-label { writing-mode: vertical-rl; align-self: center; justify-self: end; padding: 14px 6px; margin-right: 6px; }
 .axis-label { display:flex; align-items:center; justify-content:center; font-weight:800; color: var(--accent); font-size: 1.05rem; }
 .row-label { justify-content:flex-end; padding-right: 4px; }
@@ -46,13 +49,13 @@ nav.topbar { display:flex; justify-content:space-between; align-items:center; ga
 .board-cell.occupied { background: var(--chip); border-color: var(--chip-border); color: var(--chip-ink); }
 .board-cell.shake { animation: shake 0.25s ease-in-out; }
 .board-cell.fixed { background: var(--fixed); border-color: var(--fixed-border); color: var(--fixed-ink); border-style: double; border-width: 4px; }
-.number-panel { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin: 14px 0 12px; }
+.number-panel { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin: 10px 0 8px; }
 .number-chip { width: min(16vw, 64px); height: min(16vw, 64px); max-width: 64px; max-height: 64px; border-radius: 16px; border: 2px solid var(--chip-border); background: var(--chip); color: var(--chip-ink); font-size: 1.35rem; font-weight: 800; font-family: "Hiragino Maru Gothic ProN", "UD Digi Kyokasho N-B", "Rounded Mplus 1c", "Yu Gothic", sans-serif; display:flex; align-items:center; justify-content:center; touch-action: none; }
 .number-chip.used { opacity: 0.35; }
 .number-chip.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
-.controls { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top: 8px; }
+.controls { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top: 6px; }
 .controls button:disabled { opacity: 0.4; cursor: not-allowed; }
-.message { min-height: 42px; text-align:center; color: var(--warn); font-weight:700; margin-top:10px; }
+.message { min-height: 34px; text-align:center; color: var(--warn); font-weight:700; margin-top:6px; }
 .badge.timer { font-variant-numeric: tabular-nums; }
 .badge.timer.warn { background: rgba(242,184,75,0.25); color: #8a5a00; }
 .badge.timer.danger { background: rgba(204,107,78,0.22); color: var(--warn); animation: pulse 1s ease-in-out infinite; }
@@ -86,4 +89,4 @@ nav.topbar { display:flex; justify-content:space-between; align-items:center; ga
 .tutorial-card { display:grid; gap:10px; }
 .tutorial-example { display:grid; gap:8px; justify-content:center; padding: 10px 0; }
 @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 50%{transform:translateX(6px)} 75%{transform:translateX(-4px)} }
-@media (max-width: 640px) { #app { padding: 10px 10px 30px; } .card { padding: 16px; border-radius: 18px; } .number-chip { width: 54px; height: 54px; } .board-cell { font-size: 1.1rem; } }
+@media (max-width: 640px) { #app { padding: 10px 10px 30px; } .card { padding: 16px; border-radius: 18px; } .card.game-card { padding: 12px 14px 14px; } .number-chip { width: 54px; height: 54px; } .board-cell { font-size: 1.1rem; } }
