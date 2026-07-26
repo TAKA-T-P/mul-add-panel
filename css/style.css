@@ -1,0 +1,89 @@
+:root { color-scheme: light; --bg: #f7f4eb; --panel: #ffffff; --ink: #2d3a4a; --muted: #6e7b8a; --accent: #3b82f6; --accent-soft: #dbeafe; --mint: #4ec5b7; --gold: #f2b84b; --warn: #cc6b4e; --border: #d6dce6; --fixed: #dfe3ea; --fixed-border: #7d8698; --fixed-ink: #414a5a; --chip: #ffb066; --chip-border: #e2872e; --chip-ink: #5a3512; }
+body[data-chip-color="orange"] { --chip: #ffb066; --chip-border: #e2872e; --chip-ink: #5a3512; }
+body[data-chip-color="blue"] { --chip: #7db8ff; --chip-border: #3d7fd6; --chip-ink: #0d2b52; }
+body[data-chip-color="green"] { --chip: #7ed9a8; --chip-border: #319966; --chip-ink: #10402a; }
+body[data-chip-color="pink"] { --chip: #ffa8c6; --chip-border: #e0568f; --chip-ink: #5c1638; }
+body[data-chip-color="purple"] { --chip: #c7abf7; --chip-border: #8c5fd8; --chip-ink: #35205c; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Yu Gothic", "Hiragino Sans", "Noto Sans JP", sans-serif; background: linear-gradient(135deg, #fbf9f2 0%, var(--bg) 100%), repeating-linear-gradient(0deg, rgba(59,130,246,0.035) 0px, rgba(59,130,246,0.035) 1px, transparent 1px, transparent 40px), repeating-linear-gradient(90deg, rgba(59,130,246,0.035) 0px, rgba(59,130,246,0.035) 1px, transparent 1px, transparent 40px); color: var(--ink); }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+#app { position: relative; z-index: 1; max-width: 760px; margin: 0 auto; padding: 20px 16px 40px; }
+#bg-numbers { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; opacity: 0; transition: opacity 0.5s ease; }
+body.bg-numbers-active #bg-numbers { opacity: 1; }
+.bg-number { position: absolute; font-weight: 900; line-height: 1; font-family: "Hiragino Maru Gothic ProN", "Rounded Mplus 1c", "Yu Gothic", sans-serif; animation-name: bgFloatUpRight; animation-timing-function: linear; animation-iteration-count: infinite; will-change: transform; }
+@keyframes bgFloatUpRight { from { transform: translate(0, 0); } to { transform: translate(65vw, -125vh); } }
+.card { background: rgba(255,255,255,0.95); border: 1px solid rgba(0,0,0,0.06); border-radius: 24px; box-shadow: 0 12px 30px rgba(35, 72, 106, 0.12); padding: 20px; }
+.card.translucent-card { background: rgba(255,255,255,0.28); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+.screen-title .hero { text-align: center; padding: 8px 0 20px; }
+.screen-title h1 { font-size: clamp(1.6rem, 8vw, 2.6rem); margin: 8px 0 6px; font-weight: 900; letter-spacing: 0.01em; white-space: nowrap; font-family: "Hiragino Maru Gothic ProN", "Rounded Mplus 1c", "Yu Gothic", sans-serif; background: linear-gradient(135deg, var(--accent) 0%, var(--mint) 55%, var(--gold) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; -webkit-text-stroke: 1px rgba(59,130,246,0.5); filter: drop-shadow(0 2px 1px rgba(45,58,74,0.15)); }
+.screen-title .subtitle { font-weight: 700; }
+.screen-title .subtitle { font-size: 1rem; color: var(--muted); margin: 0 0 16px; }
+.button-grid { display: grid; gap: 12px; margin-top: 16px; }
+.mode-option { display:flex; flex-direction:column; gap: 4px; }
+.mode-option p { margin: 0; padding-left: 4px; }
+.primary-btn, .secondary-btn, .ghost-btn { border: none; border-radius: 999px; padding: 13px 16px; font-weight: 700; }
+.main-mode-btn { font-size: 1.15rem; }
+.primary-btn { background: linear-gradient(135deg, var(--accent), var(--mint)); color: white; }
+.secondary-btn { background: var(--accent-soft); color: var(--accent); }
+.ghost-btn { background: #f2f5fa; color: var(--ink); }
+.small-btn { padding: 8px 12px; border-radius: 999px; }
+nav.topbar { display:flex; justify-content:space-between; align-items:center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.topbar .back { background: var(--accent-soft); color: var(--accent); border:none; padding:8px 12px; border-radius:999px; }
+.mode-label { font-size: 0.95rem; color: var(--muted); }
+.mode-row { display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap: wrap; margin: 0 0 10px; }
+.badge { background: var(--accent-soft); color: var(--accent); border-radius:999px; padding:6px 10px; font-weight:700; }
+.board-grid { display:grid; gap: 10px; justify-content:center; align-items: stretch; margin: 14px 0 16px; }
+.group-label { display:flex; align-items:center; justify-content:center; background: var(--accent-soft); color: var(--accent); font-weight:800; font-size: 0.8rem; border-radius: 999px; padding: 6px 14px; white-space:nowrap; }
+.col-group-label { align-self: end; justify-self: center; margin-bottom: 6px; }
+.row-group-label { writing-mode: vertical-rl; align-self: center; justify-self: end; padding: 14px 6px; margin-right: 6px; }
+.axis-label { display:flex; align-items:center; justify-content:center; font-weight:800; color: var(--accent); font-size: 1.05rem; }
+.row-label { justify-content:flex-end; padding-right: 4px; }
+.board-panel-bg { background: linear-gradient(180deg, #fefefe 0%, #f8fbff 100%); border: 2px solid rgba(59,130,246,0.15); border-radius: 20px; }
+.board-cell { position: relative; width: 100%; height: 100%; border-radius: 16px; border: 2px solid var(--border); background: white; display:flex; flex-direction: column; align-items:center; justify-content:center; font-size: 1.25rem; font-weight: 800; font-family: "Hiragino Maru Gothic ProN", "UD Digi Kyokasho N-B", "Rounded Mplus 1c", "Yu Gothic", sans-serif; transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease; touch-action: none; }
+.board-cell .cell-value { line-height: 1; }
+.board-cell.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
+.board-cell.occupied { background: var(--chip); border-color: var(--chip-border); color: var(--chip-ink); }
+.board-cell.shake { animation: shake 0.25s ease-in-out; }
+.board-cell.fixed { background: var(--fixed); border-color: var(--fixed-border); color: var(--fixed-ink); border-style: double; border-width: 4px; }
+.number-panel { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin: 14px 0 12px; }
+.number-chip { width: min(16vw, 64px); height: min(16vw, 64px); max-width: 64px; max-height: 64px; border-radius: 16px; border: 2px solid var(--chip-border); background: var(--chip); color: var(--chip-ink); font-size: 1.35rem; font-weight: 800; font-family: "Hiragino Maru Gothic ProN", "UD Digi Kyokasho N-B", "Rounded Mplus 1c", "Yu Gothic", sans-serif; display:flex; align-items:center; justify-content:center; touch-action: none; }
+.number-chip.used { opacity: 0.35; }
+.number-chip.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+.controls { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top: 8px; }
+.controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+.message { min-height: 42px; text-align:center; color: var(--warn); font-weight:700; margin-top:10px; }
+.badge.timer { font-variant-numeric: tabular-nums; }
+.badge.timer.warn { background: rgba(242,184,75,0.25); color: #8a5a00; }
+.badge.timer.danger { background: rgba(204,107,78,0.22); color: var(--warn); animation: pulse 1s ease-in-out infinite; }
+.countdown-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(20,28,45,0.6); z-index: 2000; }
+.countdown-number { font-size: 8rem; font-weight: 900; color: #ffffff; text-shadow: 0 8px 28px rgba(0,0,0,0.4); animation: countdownPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); font-family: "Hiragino Maru Gothic ProN", "Rounded Mplus 1c", "Yu Gothic", sans-serif; }
+.countdown-number.go { font-size: 3.6rem; color: var(--gold); letter-spacing: 0.04em; }
+@keyframes countdownPop { 0% { transform: scale(0.3); opacity: 0; } 65% { transform: scale(1.15); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+.drag-ghost { position: fixed; top: 0; left: 0; width: 56px; height: 56px; margin-left: -28px; margin-top: -28px; border-radius: 14px; background: linear-gradient(135deg, var(--accent), var(--mint)); color: #fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:1.3rem; box-shadow: 0 8px 20px rgba(0,0,0,0.25); pointer-events: none; z-index: 1000; }
+.reveal-card { text-align: center; }
+.reveal-list { display:grid; gap: 8px; margin-top: 12px; }
+.reveal-item { opacity: 0; transform: translateY(6px); animation: revealFade 0.4s ease forwards; background: var(--accent-soft); color: var(--accent); border-radius: 12px; padding: 8px 12px; font-weight: 700; }
+.result-card { text-align: center; }
+.record-badge { color: #b8860b; font-weight: 800; background: rgba(242,184,75,0.18); border-radius: 14px; padding: 8px 12px; margin: 8px 0; }
+.star-rating { font-size: 2.4rem; color: var(--gold); text-shadow: 0 2px 6px rgba(242,184,75,0.4); margin: 6px 0; letter-spacing: 0.15em; }
+.rule-list { text-align: left; padding-left: 1.2em; margin: 0 0 10px; color: var(--ink); line-height: 1.6; }
+.sub-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.copyright { text-align: center; font-size: 0.7rem; color: var(--muted); opacity: 0.7; margin: 16px 0 0; }
+@keyframes revealFade { to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+.list { text-align:left; margin: 10px 0; color: var(--muted); }
+.small { font-size: 0.95rem; color: var(--muted); }
+.row { display:flex; gap:12px; flex-wrap:wrap; margin-top: 10px; }
+.setting-item { display:flex; justify-content:space-between; align-items:center; padding: 10px 0; border-bottom: 1px solid #e9edf4; }
+.setting-item.setting-item-stacked { flex-direction: column; align-items: stretch; gap: 8px; }
+.chip-color-picker { display:flex; justify-content:center; gap: 12px; }
+.chip-color-swatch { width: 40px; height: 40px; border-radius: 50%; border: 3px solid transparent; padding: 0; }
+.chip-color-swatch.selected { border-color: var(--ink); box-shadow: 0 0 0 2px rgba(45,58,74,0.15); }
+.table-list { display:grid; grid-template-columns: max-content 1fr; row-gap: 8px; margin: 10px 0; }
+.table-list .record-label { background:#f5f8fc; border-radius:12px 0 0 12px; padding:10px 4px 10px 12px; white-space: nowrap; }
+.table-list .record-value { background:#f5f8fc; border-radius:0 12px 12px 0; padding:10px 12px 10px 4px; }
+.tutorial-card { display:grid; gap:10px; }
+.tutorial-example { display:grid; gap:8px; justify-content:center; padding: 10px 0; }
+@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 50%{transform:translateX(6px)} 75%{transform:translateX(-4px)} }
+@media (max-width: 640px) { #app { padding: 10px 10px 30px; } .card { padding: 16px; border-radius: 18px; } .number-chip { width: 54px; height: 54px; } .board-cell { font-size: 1.1rem; } }
