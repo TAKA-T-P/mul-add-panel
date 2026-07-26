@@ -7,6 +7,13 @@ const MODE_LABELS = {
   challenge: '3分チャレンジ',
 };
 
+const MISSION_INFO = {
+  threeLeft: { label: 'あと3マス', description: '超おてがる！残り3枚を正しい場所に入れよう！' },
+  fixTheSwap: { label: 'まちがいを直せ', description: '2枚の数字が入れかわっているよ。正しく直そう！' },
+  hiddenHint: { label: 'かくされたヒント', description: '盤面を完成させて、「？」に入る数も求めよう！' },
+  moveLimit: { label: '移動回数チャレンジ', description: '決められた回数以内に、入れ替えだけで完成させよう！' },
+};
+
 const CHIP_COLORS = [
   { id: 'orange', label: 'オレンジ', swatch: '#ffb066' },
   { id: 'blue', label: 'ブルー', swatch: '#7db8ff' },
@@ -47,6 +54,55 @@ const TIME_ATTACK_RANKS = [
   { rank: 'F', multiplier: Infinity, title: '未来のロジックマスター', singleComment: 'まずはクリアできたことが大きな一歩！次は今回の記録を少し超えてみよう！', tripleComment: '3問すべて完成させたことが大きな成果！次は少しずつタイムを縮めよう！' },
 ];
 
+// Smart-clear evaluation: how cleanly the player reached the correct answer,
+// independent of time. Priority order (best to worst) is oneShot > perfectLogic
+// > noMistake > recovery - only the single best-matching tier is ever shown.
+const SMART_CLEAR_TIER_RANK = { oneShot: 4, perfectLogic: 3, noMistake: 2, recovery: 1 };
+
+const SMART_CLEAR_INFO = {
+  oneShot: {
+    comment: '一発配置！\n頭の中でしっかり考えてから、すべての数字を置けたね！',
+    tripleComment: '3問すべて一発配置！先を読む力と正確さがすばらしい！',
+  },
+  perfectLogic: {
+    comment: '完全推理！\n積と和を手掛かりに、自分の力だけで答えを導き出したね！',
+    tripleComment: '3問すべてヒントなし・ノーミス！安定した推理力だね！',
+  },
+  noMistake: {
+    comment: 'ノーミスクリア！\n一度の解答で正解！条件を正確に確認できたね！',
+    tripleComment: '3問を一度の解答で正解！最後まで正確に考えられたね！',
+  },
+  recovery: {
+    comment: 'ナイスリカバリー！\n間違いを見直して、自分の力で正解に直せたね！',
+    tripleComment: '間違いを見直しながら、3問すべてを最後まで解き切ったね！',
+  },
+};
+
+// Resets the per-puzzle operation tracking used by evaluateSmartClear().
+// Called whenever a fresh puzzle is put on screen (not on a manual reset,
+// which instead just flags resetUsed so the attempt keeps being tracked).
+function resetSmartClearTracking() {
+  appState.smartClear = { hintUsed: false, resetUsed: false, wrongSubmitted: false, hasExtraMove: false, fillCount: 0 };
+}
+
+function evaluateSmartClear() {
+  const sc = appState.smartClear;
+  if (sc.wrongSubmitted) return 'recovery';
+  if (!sc.hintUsed && !sc.resetUsed) {
+    return sc.hasExtraMove ? 'perfectLogic' : 'oneShot';
+  }
+  return 'noMistake';
+}
+
+// Aggregates the three-question smart-clear tiers into one overall tier: the
+// weakest of the three, since a triple-comment can only claim "all 3" did
+// something if every single one of them actually qualified for it.
+function getWorstSmartClearTier(tiers) {
+  return tiers.reduce((worst, tier) => (
+    SMART_CLEAR_TIER_RANK[tier] < SMART_CLEAR_TIER_RANK[worst] ? tier : worst
+  ), tiers[0]);
+}
+
 // Shared by both 1問 and 3問 time-attack results. 3問 evaluates on the
 // per-question average (totalTimeMs / 3), never the raw total, and never on
 // the rounded/displayed time - always the actual measured milliseconds.
@@ -86,20 +142,41 @@ const appState = {
   challengeCountdown: null,
   challengeQuestionNumber: 1,
   challengeMistakeThisPuzzle: false,
+  challengeCombo: 0,
+  comboDisplayText: null,
+  milestoneDisplayText: null,
+  milestoneIsZone: false,
+  correctMarkPhase: null,
   challengeFinished: false,
   challengeGracePeriodActive: false,
   challengeGraceCountdown: null,
   challengeLastBeepSecond: null,
   threeQuestionProgress: 0,
   threeQuestionTimes: [],
+  threeQuestionSmartTiers: [],
   resultBoards: [],
   showResultHistory: false,
+  showPuzzleKey: false,
   challengeStats: { clearCount: 0, correctCells: 0, noMistakeClears: 0, noMistakeStreak: 0, bestNoMistakeStreak: 0 },
   resultPreviousBest: null,
   resultElapsed: 0,
   isNewRecord: false,
   resultEvaluation: null,
   resultChallenge: null,
+  resultSmartClear: null,
+  missionType: null,
+  missionInitialValues: [],
+  missionMistakeRows: [],
+  missionMistakeCols: [],
+  missionHintUsed: false,
+  missionHintKind: null,
+  missionHiddenHint: null,
+  missionMoveCount: 0,
+  missionMinSwaps: 0,
+  missionAllowedMoves: 0,
+  resultMissionText: null,
+  lastSmartClearTier: null,
+  smartClear: { hintUsed: false, resetUsed: false, wrongSubmitted: false, hasExtraMove: false, fillCount: 0 },
   showCorrectMark: false,
   records: readRecords(),
   settings: readSettings(),
@@ -189,6 +266,9 @@ function handleClick(event) {
   }
   switch (action) {
     case 'show-howto': appState.screen = 'howto'; break;
+    case 'show-missions': appState.screen = 'mission-select'; break;
+    case 'start-mission': startMission(actionEl.dataset.mission); break;
+    case 'toggle-mission-hint': useMissionHint(); break;
     case 'show-records': appState.screen = 'records'; break;
     case 'show-settings': appState.screen = 'settings'; break;
     case 'select-size': appState.puzzleSize = actionEl.dataset.size; appState.screen = 'play-style'; break;
@@ -210,9 +290,14 @@ function handleClick(event) {
       submitAnswer();
       return;
     case 'next-puzzle': startGame(); break;
-    case 'play-again': if (appState.mode === 'challenge') startChallenge(); else startGame(); break;
+    case 'play-again':
+      if (appState.mode === 'challenge') startChallenge();
+      else if (appState.mode === 'mission') startMission(appState.missionType);
+      else startGame();
+      break;
     case 'title-again': clearIntervalsOnly(); appState.screen = 'title'; break;
     case 'toggle-result-history': appState.showResultHistory = !appState.showResultHistory; break;
+    case 'toggle-puzzle-key': appState.showPuzzleKey = !appState.showPuzzleKey; break;
     case 'toggle-sound': appState.settings.sound = !appState.settings.sound; saveSettings(appState.settings); break;
     case 'set-chip-color': appState.settings.chipColor = actionEl.dataset.color; saveSettings(appState.settings); break;
     case 'reset-records': if (confirm('これまでの記録をすべて消しますか？')) { appState.records = resetRecords(); } break;
@@ -276,13 +361,15 @@ function handlePointerUp(event) {
     if (ctx.source === 'panel') {
       placeValue(targetIndex, ctx.value);
     } else if (ctx.source === 'cell' && ctx.fromIndex !== targetIndex) {
-      swapCells(ctx.fromIndex, targetIndex);
-      appState.message = '';
+      const swapped = swapCells(ctx.fromIndex, targetIndex);
+      if (swapped) appState.message = '';
     }
-  } else if (ctx.source === 'cell') {
+  } else if (ctx.source === 'cell' && !isNoPanelMission()) {
     // Dropped outside any cell (e.g. back onto the number panel) - send the
     // number back to its original tray slot instead of leaving it in place.
+    // Not applicable to the no-panel missions, which have no tray to return to.
     appState.boardValues[ctx.fromIndex] = null;
+    appState.smartClear.hasExtraMove = true;
     appState.message = '';
   }
   lastDragEndAt = Date.now();
@@ -310,18 +397,22 @@ function handleCellTap(index) {
   const cellValue = appState.boardValues[index];
   if (appState.selectedCellIndex !== null) {
     if (index === appState.selectedCellIndex) {
-      // Tapping the already-selected cell again sends its number back to
-      // the panel, instead of just cancelling the selection.
-      appState.boardValues[index] = null;
+      // Tapping the already-selected cell again sends its number back to the
+      // panel, instead of just cancelling the selection - except in the
+      // no-panel missions, which have nowhere for it to go back to.
+      if (!isNoPanelMission()) {
+        appState.boardValues[index] = null;
+        appState.smartClear.hasExtraMove = true;
+      }
       appState.selectedCellIndex = null;
       appState.message = '';
       render();
       return;
     }
-    swapCells(appState.selectedCellIndex, index);
+    const swapped = swapCells(appState.selectedCellIndex, index);
     appState.selectedCellIndex = null;
     appState.selectedValue = null;
-    appState.message = '';
+    if (swapped) appState.message = '';
     render();
     return;
   }
@@ -346,11 +437,30 @@ function handleNumberTap(value) {
   render();
 }
 
+// Returns whether the swap actually happened (false if refused, e.g. a
+// fixed-cell target or an exhausted 移動回数チャレンジ move budget) so callers
+// know whether it's safe to clear appState.message.
 function swapCells(fromIndex, toIndex) {
-  if (appState.fixedCells.includes(fromIndex) || appState.fixedCells.includes(toIndex)) return;
+  if (appState.fixedCells.includes(fromIndex) || appState.fixedCells.includes(toIndex)) return false;
+  if (appState.mode === 'mission' && appState.missionType === 'moveLimit') {
+    const remaining = appState.missionAllowedMoves - appState.missionMoveCount;
+    if (remaining <= 0) {
+      appState.message = '移動回数を使い切ったよ。答えを確認するか、リセットしよう！';
+      return false;
+    }
+  }
+  if (appState.mode === 'mission') appState.missionMoveCount += 1;
+  appState.smartClear.hasExtraMove = true;
   const temp = appState.boardValues[toIndex];
   appState.boardValues[toIndex] = appState.boardValues[fromIndex];
   appState.boardValues[fromIndex] = temp;
+  return true;
+}
+
+// True for missions where the board is always fully occupied and swapping is
+// the only legal move - no number panel exists to draw from or return to.
+function isNoPanelMission() {
+  return appState.mode === 'mission' && (appState.missionType === 'fixTheSwap' || appState.missionType === 'moveLimit');
 }
 
 function placeValue(index, value) {
@@ -363,6 +473,11 @@ function placeValue(index, value) {
   const existingValue = appState.boardValues[index];
   if (existingIndex >= 0 && existingIndex !== index) {
     appState.boardValues[existingIndex] = existingValue;
+    appState.smartClear.hasExtraMove = true;
+  } else if (existingValue !== null) {
+    appState.smartClear.hasExtraMove = true;
+  } else {
+    appState.smartClear.fillCount += 1;
   }
   appState.boardValues[index] = value;
   appState.selectedValue = null;
@@ -371,10 +486,17 @@ function placeValue(index, value) {
 }
 
 function resetBoard() {
-  appState.fixedCells = Array.from(appState.initialFixedCells);
-  appState.boardValues = appState.boardValues.map((value, index) => (
-    appState.fixedCells.includes(index) ? appState.currentPuzzle.answer[index] : null
-  ));
+  if (isNoPanelMission()) {
+    // まちがいを直せ / 移動回数チャレンジ: there's no "answer minus fixed cells"
+    // to fall back on - restore the exact initial (wrong/shuffled) layout.
+    appState.boardValues = appState.missionInitialValues.slice();
+    appState.missionMoveCount = 0;
+  } else {
+    appState.fixedCells = Array.from(appState.initialFixedCells);
+    appState.boardValues = appState.boardValues.map((value, index) => (
+      appState.fixedCells.includes(index) ? appState.currentPuzzle.answer[index] : null
+    ));
+  }
   appState.selectedValue = null;
   appState.selectedCellIndex = null;
   appState.hintCount = 0;
@@ -382,6 +504,8 @@ function resetBoard() {
   appState.message = '';
   appState.wrongRowIndices = [];
   appState.wrongColIndices = [];
+  appState.smartClear.resetUsed = true;
+  if (appState.mode === 'challenge') appState.challengeCombo = 0;
   render();
 }
 
@@ -421,13 +545,14 @@ function useHint() {
   appState.boardValues[targetIndex] = hintValue;
   appState.fixedCells.push(targetIndex);
   appState.hintCount += 1;
+  appState.smartClear.hintUsed = true;
   render();
 }
 
 // --- Puzzle lifecycle helpers ---
 
 function getCurrentBoardModeKey() {
-  return appState.mode === 'challenge' ? 'standard' : appState.puzzleSize;
+  return (appState.mode === 'challenge' || appState.mode === 'mission') ? 'standard' : appState.puzzleSize;
 }
 
 function applyPuzzleState(puzzleState) {
@@ -447,6 +572,29 @@ function getChallengeFixedCount(questionNumber) {
   if (questionNumber === 4) return 2;
   if (questionNumber <= 7) return 1;
   return 0;
+}
+
+// Combo text is only shown from 2 onward; the wording gets a little more
+// excited every couple of steps, but the number itself always keeps counting.
+function getComboDisplayText(combo) {
+  if (combo < 2) return null;
+  if (combo === 2) return '2 COMBO！\n連続ノーミス！';
+  if (combo <= 4) return `${combo} COMBO！\nすばらしい集中力！`;
+  return `${combo} COMBO！\n鋭い推理が止まらない！`;
+}
+
+// Fires right after clearing the given question number, announcing the drop
+// in fixed cells the player is about to face on the *next* question. No entry
+// for 5/6 (still 1 fixed, same as after Q4) or 8+ (stays at 0 forever after).
+function getChallengeMilestoneText(questionNumber) {
+  const map = {
+    1: 'レベルアップ！\n次は固定マスが4枚！',
+    2: 'さらに難しくなるぞ！\n次は固定マスが3枚！',
+    3: 'ここから上級！\n次は固定マスが2枚！',
+    4: '手掛かりはあと1枚！\n本格推理に挑戦！',
+    7: '完全推理ゾーン突入！\nここからは固定マスなし！',
+  };
+  return map[questionNumber] || null;
 }
 
 function getNextPuzzle(sizeOverride = null) {
@@ -590,10 +738,14 @@ function startGame() {
   appState.timer.reset();
   appState.resultBoards = [];
   appState.showResultHistory = false;
+  appState.showPuzzleKey = false;
   if (appState.mode === 'three-questions') {
     appState.threeQuestionProgress = 0;
     appState.threeQuestionTimes = [];
+    appState.threeQuestionSmartTiers = [];
   }
+  appState.resultSmartClear = null;
+  resetSmartClearTracking();
   appState.currentPuzzle = getNextPuzzle();
   applyPuzzleState(createPuzzleState(appState.currentPuzzle, appState.puzzleSize));
   startCountdown(() => {
@@ -614,6 +766,11 @@ function startChallenge() {
   appState.lastRecordMessage = '';
   appState.challengeQuestionNumber = 1;
   appState.challengeMistakeThisPuzzle = false;
+  appState.challengeCombo = 0;
+  appState.comboDisplayText = null;
+  appState.milestoneDisplayText = null;
+  appState.milestoneIsZone = false;
+  appState.correctMarkPhase = null;
   appState.challengeFinished = false;
   appState.challengeGracePeriodActive = false;
   appState.challengeGraceCountdown = null;
@@ -649,7 +806,84 @@ function startChallenge() {
   });
 }
 
+function startMission(missionType) {
+  clearIntervalsOnly();
+  appState.mode = 'mission';
+  appState.missionType = missionType;
+  appState.puzzleSize = 'standard';
+  appState.message = '';
+  appState.boardShake = false;
+  appState.hintCount = 0;
+  appState.wrongAnswerCount = 0;
+  appState.showPuzzleKey = false;
+  appState.missionHintUsed = false;
+  appState.missionHintKind = null;
+  appState.missionMistakeRows = [];
+  appState.missionMistakeCols = [];
+  appState.missionMoveCount = 0;
+  appState.missionMinSwaps = 0;
+  appState.missionAllowedMoves = 0;
+  appState.missionHiddenHint = null;
+  appState.resultMissionText = null;
+  resetSmartClearTracking();
+
+  let puzzle = getNextPuzzle('standard');
+  let puzzleState;
+  if (missionType === 'threeLeft') {
+    const setup = createMissionThreeLeftState(puzzle);
+    puzzleState = { values: setup.values, fixed: setup.fixed };
+  } else if (missionType === 'fixTheSwap') {
+    const setup = createMissionFixTheSwapState(puzzle);
+    puzzleState = { values: setup.values, fixed: [] };
+    appState.missionInitialValues = setup.values.slice();
+    appState.missionMistakeRows = setup.mistakeRows;
+    appState.missionMistakeCols = setup.mistakeCols;
+    appState.missionHintKind = Math.random() < 0.5 ? 'row' : 'col';
+  } else if (missionType === 'hiddenHint') {
+    // かくされたヒント needs a puzzle whose hiddenHintCandidates isn't empty.
+    let attempts = 0;
+    while ((!puzzle.hiddenHintCandidates || puzzle.hiddenHintCandidates.length === 0) && attempts < 30) {
+      puzzle = getNextPuzzle('standard');
+      attempts += 1;
+    }
+    const candidates = puzzle.hiddenHintCandidates || [];
+    appState.missionHiddenHint = candidates[Math.floor(Math.random() * candidates.length)] || null;
+    puzzleState = { values: Array(9).fill(null), fixed: [] };
+  } else {
+    const setup = createMissionMoveLimitState(puzzle);
+    puzzleState = { values: setup.values, fixed: [] };
+    appState.missionInitialValues = setup.values.slice();
+    appState.missionMinSwaps = setup.minSwaps;
+    appState.missionAllowedMoves = setup.minSwaps + 1;
+  }
+  appState.currentPuzzle = puzzle;
+  applyPuzzleState(puzzleState);
+  startCountdown(() => {
+    appState.screen = 'game';
+  });
+}
+
+// まちがいを直せ's single hint: reveals only which one row-or-column is
+// mismatched (chosen once at mission start), never the exact cells.
+function useMissionHint() {
+  if (appState.mode !== 'mission' || appState.missionType !== 'fixTheSwap' || appState.missionHintUsed) return;
+  appState.missionHintUsed = true;
+  appState.smartClear.hintUsed = true;
+  if (appState.missionHintKind === 'row') {
+    const row = appState.missionMistakeRows[0];
+    appState.message = `${ROW_POSITION_WORDS[row]}の横一列を確認してみよう！`;
+  } else {
+    const col = appState.missionMistakeCols[0];
+    appState.message = `${COL_POSITION_WORDS[col]}の縦一列に注目してみよう！`;
+  }
+  render();
+}
+
 function submitAnswer() {
+  if (appState.mode === 'mission' && appState.missionType === 'hiddenHint') {
+    submitHiddenHintAnswer();
+    return;
+  }
   const boardModeKey = getCurrentBoardModeKey();
   const result = checkSolution(appState.boardValues, appState.currentPuzzle, boardModeKey);
   if (result.valid) {
@@ -659,37 +893,100 @@ function submitAnswer() {
   }
 }
 
+// かくされたヒント requires both the board AND the typed "?" value to be
+// correct at once. The input isn't tracked in appState (no render() happens
+// while typing, so its DOM value persists fine) - it's only read here, at
+// the moment of submission.
+function submitHiddenHintAnswer() {
+  const result = checkSolution(appState.boardValues, appState.currentPuzzle, 'standard');
+  const inputEl = document.getElementById('hidden-hint-value');
+  const typed = inputEl ? Number(inputEl.value) : NaN;
+  const hidden = appState.missionHiddenHint;
+  const numberCorrect = hidden && typed === hidden.value;
+  if (result.valid && numberCorrect) {
+    onCorrectAnswer();
+  } else {
+    onWrongAnswer(result);
+  }
+}
+
 function onCorrectAnswer() {
+  appState.lastSmartClearTier = evaluateSmartClear();
   if (appState.mode === 'challenge') {
     appState.challengeCountdown.pause();
+    applyChallengeClearStats();
   } else {
     stopTimer();
   }
   showCorrectMark(finishCorrectFlow);
 }
 
+// Updates the 3-minute challenge's running stats/combo the instant an answer
+// is confirmed correct - i.e. before the 2.5s correct-mark display even
+// starts - so the combo/milestone text it computes here is ready in time to
+// be shown during that same window (see showCorrectMark()).
+function applyChallengeClearStats() {
+  const stats = appState.challengeStats;
+  const totalCells = appState.boardValues.length;
+  stats.clearCount += 1;
+  stats.correctCells += totalCells - appState.fixedCells.length;
+  if (!appState.challengeMistakeThisPuzzle) {
+    stats.noMistakeClears += 1;
+    stats.noMistakeStreak += 1;
+    stats.bestNoMistakeStreak = Math.max(stats.bestNoMistakeStreak, stats.noMistakeStreak);
+    appState.challengeCombo += 1;
+  } else {
+    stats.noMistakeStreak = 0;
+    appState.challengeCombo = 0;
+  }
+  appState.comboDisplayText = getComboDisplayText(appState.challengeCombo);
+  // No "next problem" exists while the grace period's final puzzle is being
+  // solved, so there is nothing to announce a milestone about.
+  appState.milestoneDisplayText = appState.challengeGracePeriodActive
+    ? null
+    : getChallengeMilestoneText(appState.challengeQuestionNumber);
+  appState.milestoneIsZone = appState.challengeQuestionNumber === 7 && !appState.challengeGracePeriodActive;
+}
+
 // The game screen stays put (board and all) while a big "○" pops up over
-// it for a beat - no more switching away to a separate reveal screen.
+// it for a beat - no more switching away to a separate reveal screen. For
+// the 3-minute challenge, the same window is split in two: the first second
+// shows the combo text (if any), the rest shows the milestone text (if any) -
+// no extra delay is added, both phases fit inside the existing duration.
 function showCorrectMark(onDoneCallback) {
   const baseDurations = { leisure: 1800, 'time-attack': 2500, 'three-questions': 2500, challenge: 2500 };
   const duration = baseDurations[appState.mode] || 1000;
   appState.showCorrectMark = true;
   playCorrectSound();
+  if (appState.mode === 'challenge') {
+    appState.correctMarkPhase = 'combo';
+    if (appState.milestoneIsZone) playChallengeZoneSound();
+  }
   render();
+  if (appState.mode === 'challenge') {
+    setTimeout(() => {
+      if (!appState.showCorrectMark) return;
+      appState.correctMarkPhase = 'milestone';
+      render();
+    }, 1000);
+  }
   setTimeout(() => {
     appState.showCorrectMark = false;
+    appState.correctMarkPhase = null;
     onDoneCallback();
   }, duration);
 }
 
 function finishCorrectFlow() {
   if (appState.mode === 'leisure') {
+    appState.resultSmartClear = appState.lastSmartClearTier;
     appState.screen = 'result';
     render();
     return;
   }
 
   if (appState.mode === 'time-attack') {
+    appState.resultSmartClear = appState.lastSmartClearTier;
     const elapsed = appState.timer.getElapsedSeconds();
     const recordKey = getTimeAttackRecordKey(appState.puzzleSize, 1);
     const previous = appState.records.timeAttack[recordKey];
@@ -718,6 +1015,7 @@ function finishCorrectFlow() {
 
   if (appState.mode === 'three-questions') {
     appState.threeQuestionTimes.push(appState.timer.getElapsedSeconds());
+    appState.threeQuestionSmartTiers.push(appState.lastSmartClearTier);
     appState.resultBoards.push({
       puzzle: appState.currentPuzzle,
       values: appState.boardValues.slice(),
@@ -728,12 +1026,14 @@ function finishCorrectFlow() {
       appState.message = '';
       appState.currentPuzzle = getNextPuzzle();
       applyPuzzleState(createPuzzleState(appState.currentPuzzle, appState.puzzleSize));
+      resetSmartClearTracking();
       appState.timer.reset();
       appState.timer.start();
       appState.screen = 'game';
       render();
       return;
     }
+    appState.resultSmartClear = getWorstSmartClearTier(appState.threeQuestionSmartTiers);
     const totalElapsed = appState.threeQuestionTimes.reduce((a, b) => a + b, 0);
     const recordKey = getTimeAttackRecordKey(appState.puzzleSize, 3);
     const previous = appState.records.timeAttack[recordKey];
@@ -756,17 +1056,6 @@ function finishCorrectFlow() {
   }
 
   if (appState.mode === 'challenge') {
-    const stats = appState.challengeStats;
-    const totalCells = appState.boardValues.length;
-    stats.clearCount += 1;
-    stats.correctCells += totalCells - appState.fixedCells.length;
-    if (!appState.challengeMistakeThisPuzzle) {
-      stats.noMistakeClears += 1;
-      stats.noMistakeStreak += 1;
-      stats.bestNoMistakeStreak = Math.max(stats.bestNoMistakeStreak, stats.noMistakeStreak);
-    } else {
-      stats.noMistakeStreak = 0;
-    }
     if (appState.challengeGracePeriodActive) {
       // The final problem (granted after the main clock ran out) was solved
       // in time - the run ends here regardless of the grace window.
@@ -775,25 +1064,90 @@ function finishCorrectFlow() {
     }
     appState.challengeCountdown.resume();
     appState.message = '';
+    appState.comboDisplayText = null;
+    appState.milestoneDisplayText = null;
+    appState.milestoneIsZone = false;
     appState.challengeQuestionNumber += 1;
     appState.challengeMistakeThisPuzzle = false;
     appState.currentPuzzle = getNextPuzzle('standard');
     applyPuzzleState(createPuzzleState(appState.currentPuzzle, 'standard', getChallengeFixedCount(appState.challengeQuestionNumber)));
     appState.screen = 'game';
     render();
+    return;
+  }
+
+  if (appState.mode === 'mission') {
+    appState.resultMissionText = evaluateMissionResult();
+    appState.screen = 'result';
+    render();
   }
 }
 
+// Each mission has its own single evaluation line (or none, for a plain
+// clear) instead of the 4-tier smart-clear system used elsewhere.
+function evaluateMissionResult() {
+  const sc = appState.smartClear;
+  const firstTryClean = !sc.wrongSubmitted;
+  if (appState.missionType === 'threeLeft') {
+    return (firstTryClean && !sc.hasExtraMove)
+      ? 'パーフェクト完成！\n残り3枚の場所を一度で見抜いたね！'
+      : null;
+  }
+  if (appState.missionType === 'fixTheSwap') {
+    return (firstTryClean && appState.missionMoveCount === 1)
+      ? '一発修正！\n入れかわった2枚をすぐに見抜いたね！'
+      : null;
+  }
+  if (appState.missionType === 'hiddenHint') {
+    return firstTryClean
+      ? '完全計算！\n盤面も隠れたヒントも、一度で正しく求められたね！'
+      : null;
+  }
+  if (appState.missionType === 'moveLimit') {
+    if (appState.missionMoveCount === appState.missionMinSwaps) {
+      return '最短ルート！\nむだのない入れ替えで、見事に完成させたね！';
+    }
+    return '計画的クリア！\n先を考えながら、決められた回数で完成できたね！';
+  }
+  return null;
+}
+
+// この問題のカギ text for the 3 missions that have one (not 移動回数チャレンジ).
+function buildCurrentMissionKey() {
+  if (appState.missionType === 'threeLeft') {
+    const emptyIndices = Array.from({ length: 9 }, (_, i) => i).filter((i) => !appState.initialFixedCells.includes(i));
+    return buildMissionThreeLeftKey(appState.currentPuzzle, emptyIndices);
+  }
+  if (appState.missionType === 'fixTheSwap') {
+    return buildMissionFixTheSwapKey(appState.missionMistakeRows, appState.missionMistakeCols);
+  }
+  if (appState.missionType === 'hiddenHint') {
+    return buildMissionHiddenHintKey(appState.currentPuzzle, appState.missionHiddenHint);
+  }
+  return null;
+}
+
 function onWrongAnswer(result) {
-  appState.message = 'おしい！どこかがちがうよ。\nもう一度見直してみよう！';
-  if (appState.mode === 'challenge') appState.challengeMistakeThisPuzzle = true;
+  // かくされたヒント and まちがいを直せ must never reveal which part (board vs.
+  // hidden number; which row/column) is wrong - a generic message only, and
+  // no "×" mismatch highlighting (which would otherwise leak exactly that).
+  const suppressMismatchHighlight = appState.mode === 'mission'
+    && (appState.missionType === 'hiddenHint' || appState.missionType === 'fixTheSwap');
+  appState.message = appState.mode === 'mission' && appState.missionType === 'hiddenHint'
+    ? '盤面か「？」の数を、もう一度確認してみよう！'
+    : 'おしい！どこかがちがうよ。\nもう一度見直してみよう！';
+  if (appState.mode === 'challenge') {
+    appState.challengeMistakeThisPuzzle = true;
+    appState.challengeCombo = 0;
+  }
   if (appState.mode === 'leisure') appState.wrongAnswerCount += 1;
+  appState.smartClear.wrongSubmitted = true;
   playWrongSound();
   appState.boardShake = true;
   setTimeout(() => { appState.boardShake = false; render(); }, 300);
 
   const puzzle = appState.currentPuzzle;
-  if (result && result.rows && result.cols) {
+  if (!suppressMismatchHighlight && result && result.rows && result.cols) {
     appState.wrongRowIndices = result.rows.reduce((acc, value, index) => {
       if (value !== puzzle.rowProducts[index]) acc.push(index);
       return acc;
@@ -947,6 +1301,14 @@ function playChallengeBeepSound() {
   playTone(880, 90, 'square');
 }
 
+// A short, distinct sparkle-like flourish for reaching the 3-minute
+// challenge's "完全推理ゾーン" (question 8+, no more fixed cells at all).
+function playChallengeZoneSound() {
+  [880, 1174.66, 1567.98].forEach((freq, index) => {
+    setTimeout(() => playTone(freq, 180, 'triangle'), index * 70);
+  });
+}
+
 // --- Formatting ---
 
 function formatResultTime(totalSeconds) {
@@ -972,7 +1334,7 @@ function formatMessage(message) {
 // --- Rendering ---
 
 function render() {
-  document.body.classList.toggle('bg-numbers-active', appState.screen === 'title' || appState.screen === 'play-style');
+  document.body.classList.toggle('bg-numbers-active', appState.screen === 'title' || appState.screen === 'play-style' || appState.screen === 'mission-select');
   document.body.dataset.chipColor = appState.settings.chipColor;
   if ((!appState.puzzlePool || !appState.puzzlePool.easy) && appState.screen === 'game') {
     appEl.innerHTML = '<div class="card"><p>読み込み中...</p></div>';
@@ -981,6 +1343,7 @@ function render() {
   switch (appState.screen) {
     case 'title': renderTitle(); break;
     case 'play-style': renderPlayStyle(); break;
+    case 'mission-select': renderMissionSelect(); break;
     case 'howto': renderHowTo(); break;
     case 'records': renderRecords(); break;
     case 'settings': renderSettings(); break;
@@ -1004,6 +1367,7 @@ function renderTitle() {
         <button class="primary-btn main-mode-btn" data-action="select-size" data-size="easy">イージー</button>
         <button class="primary-btn main-mode-btn" data-action="select-size" data-size="standard">スタンダード</button>
         <button class="secondary-btn main-mode-btn" data-action="start-challenge">3分チャレンジ</button>
+        <button class="secondary-btn main-mode-btn" data-action="show-missions">ミッション</button>
       </div>
       <div class="button-grid sub-grid">
         <button class="ghost-btn small-btn" data-action="show-howto">遊び方</button>
@@ -1031,6 +1395,20 @@ function renderPlayStyle() {
           <button class="secondary-btn" data-action="play-style" data-mode="three-questions">3問タイムアタック</button>
           <p class="small">3問の合計タイムに挑戦</p>
         </div>
+      </div>
+    </div>`;
+}
+
+function renderMissionSelect() {
+  appEl.innerHTML = `
+    <div class="card translucent-card">
+      <nav class="topbar"><button class="back" data-action="back">← もどる</button><span class="mode-label">ミッションをえらぼう</span></nav>
+      <div class="button-grid">
+        ${Object.entries(MISSION_INFO).map(([key, info]) => `
+        <div class="mode-option">
+          <button class="secondary-btn" data-action="start-mission" data-mission="${key}">${info.label}</button>
+          <p class="small">${info.description}</p>
+        </div>`).join('')}
       </div>
     </div>`;
 }
@@ -1141,12 +1519,23 @@ function renderTimeUp() {
 function renderGame() {
   const boardModeKey = getCurrentBoardModeKey();
   const board = getBoardDefinition(boardModeKey);
-  const header = MODE_LABELS[appState.mode] || '';
-  const currentRows = appState.currentPuzzle.rowProducts;
-  const currentCols = appState.currentPuzzle.columnSums;
+  const isMission = appState.mode === 'mission';
+  const header = isMission ? MISSION_INFO[appState.missionType].label : (MODE_LABELS[appState.mode] || '');
+  const isHiddenHintMission = isMission && appState.missionType === 'hiddenHint';
+  let currentRows = appState.currentPuzzle.rowProducts;
+  let currentCols = appState.currentPuzzle.columnSums;
+  if (isHiddenHintMission && appState.missionHiddenHint) {
+    const hidden = appState.missionHiddenHint;
+    if (hidden.type === 'rowProduct') {
+      currentRows = currentRows.map((value, index) => (index === hidden.index ? '？' : value));
+    } else {
+      currentCols = currentCols.map((value, index) => (index === hidden.index ? '？' : value));
+    }
+  }
   const numbers = boardModeKey === 'easy' ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5, 6, 7, 8, 9];
   const selectedIndex = appState.selectedCellIndex;
   const allFilled = appState.boardValues.every((value) => value !== null);
+  const noPanel = isNoPanelMission();
 
   let timerHtml;
   if (appState.mode === 'challenge') {
@@ -1159,6 +1548,9 @@ function renderGame() {
     }
   } else if (appState.mode === 'time-attack' || appState.mode === 'three-questions') {
     timerHtml = `<span class="badge timer">${formatLiveTime(appState.timer.getElapsedSeconds())}</span>`;
+  } else if (isMission && appState.missionType === 'moveLimit') {
+    const remainingMoves = Math.max(0, appState.missionAllowedMoves - appState.missionMoveCount);
+    timerHtml = `<span class="badge timer">のこり移動回数　${remainingMoves}回</span>`;
   } else {
     timerHtml = '';
   }
@@ -1170,12 +1562,23 @@ function renderGame() {
     progressBadge = `第${appState.challengeQuestionNumber}問`;
   }
 
-  const hintButton = appState.mode === 'leisure'
-    ? `<button class="ghost-btn" data-action="hint" ${appState.hintCount >= 3 ? 'disabled' : ''}>ヒント${appState.hintCount > 0 ? `(${appState.hintCount}/3)` : ''}</button>`
-    : '';
+  let hintButton = '';
+  if (appState.mode === 'leisure') {
+    hintButton = `<button class="ghost-btn" data-action="hint" ${appState.hintCount >= 3 ? 'disabled' : ''}>ヒント${appState.hintCount > 0 ? `(${appState.hintCount}/3)` : ''}</button>`;
+  } else if (isMission && appState.missionType === 'fixTheSwap') {
+    hintButton = `<button class="ghost-btn" data-action="toggle-mission-hint" ${appState.missionHintUsed ? 'disabled' : ''}>ヒント${appState.missionHintUsed ? '(使用済み)' : ''}</button>`;
+  }
+
+  const zoneFlash = appState.showCorrectMark && appState.correctMarkPhase === 'milestone' && appState.milestoneIsZone;
+
+  const hiddenHintInputHtml = isHiddenHintMission ? `
+      <div class="hidden-hint-input">
+        <label for="hidden-hint-value">「？」＝</label>
+        <input type="number" inputmode="numeric" id="hidden-hint-value" class="hidden-hint-field" />
+      </div>` : '';
 
   appEl.innerHTML = `
-    <div class="card game-card">
+    <div class="card game-card ${zoneFlash ? 'zone-flash' : ''}">
       <nav class="topbar">
         <button class="back" data-action="back">← もどる</button>
         ${progressBadge ? `<span class="badge">${progressBadge}</span>` : ''}
@@ -1190,21 +1593,40 @@ function renderGame() {
           <span class="cell-value">${value ?? ''}</span>
         </button>`;
       }).join(''), appState.wrongColIndices, appState.wrongRowIndices)}
+      ${hiddenHintInputHtml}
+      ${noPanel ? '' : `
       <div class="number-panel ${boardModeKey === 'easy' ? 'number-panel-grid3' : 'number-panel-grid5'}">
         ${numbers.map((number) => {
           const used = appState.boardValues.includes(number);
           return `<button class="number-chip ${used ? 'used' : ''} ${appState.selectedValue === number ? 'selected' : ''}" data-action="number" data-value="${number}">${number}</button>`;
         }).join('')}
-      </div>
+      </div>`}
       <div class="controls">
         <button class="ghost-btn" data-action="reset">リセット</button>
         ${hintButton}
         <button class="primary-btn" data-action="submit" ${allFilled ? '' : 'disabled'}>解答する</button>
       </div>
       <p class="mode-label">${getBoardSize(boardModeKey) === '3x2' ? 'イージー 3×2' : 'スタンダード 3×3'}　${header}</p>
+      ${isMission ? `<p class="small mission-guidance">${MISSION_INFO[appState.missionType].description}</p>` : ''}
       <div class="message">${formatMessage(appState.message)}</div>
-      ${appState.showCorrectMark ? '<div class="correct-mark-overlay"><div class="correct-mark">○</div></div>' : ''}
+      ${renderCorrectMarkOverlay()}
     </div>`;
+}
+
+// Beyond the "○" itself, the 3-minute challenge overlays a combo readout
+// (first second) then a milestone readout (rest of the window) - see
+// showCorrectMark() for the phase timing. Neither ever shows for other modes.
+function renderCorrectMarkOverlay() {
+  if (!appState.showCorrectMark) return '';
+  let extra = '';
+  if (appState.mode === 'challenge') {
+    if (appState.correctMarkPhase === 'combo' && appState.comboDisplayText) {
+      extra = `<div class="combo-effect">${formatMessage(appState.comboDisplayText)}</div>`;
+    } else if (appState.correctMarkPhase === 'milestone' && appState.milestoneDisplayText) {
+      extra = `<div class="milestone-effect ${appState.milestoneIsZone ? 'milestone-zone' : ''}">${formatMessage(appState.milestoneDisplayText)}</div>`;
+    }
+  }
+  return `<div class="correct-mark-overlay"><div class="correct-mark">○</div>${extra}</div>`;
 }
 
 const RANK_TIER_CLASS = {
@@ -1234,6 +1656,27 @@ function renderEvaluationBlock(evaluation) {
       <p class="rank-badge">ランク ${evaluation.rank}</p>
       <p class="rank-title">${evaluation.title}</p>
       <p class="rank-comment">${evaluation.comment}</p>
+    </div>`;
+}
+
+// Shown for じっくり and both time-attack results (not 3分チャレンジ or missions
+// with their own dedicated evaluation), just below the record-update badge.
+function renderSmartClearBlock(tierKey, isTriple) {
+  if (!tierKey) return '';
+  const info = SMART_CLEAR_INFO[tierKey];
+  const text = isTriple ? info.tripleComment : info.comment;
+  return `<div class="smart-clear-block"><p class="smart-clear-comment">${formatMessage(text)}</p></div>`;
+}
+
+// Collapsible, closed-by-default explanation of the puzzle's solving
+// approach. Only shown for じっくり and select missions - never for any timed
+// mode, since a "cheat sheet" wouldn't make sense once a clock is involved.
+function renderPuzzleKeyBlock(keyText) {
+  if (!keyText) return '';
+  return `
+    <div class="puzzle-key-block">
+      <button class="ghost-btn small-btn" data-action="toggle-puzzle-key">${appState.showPuzzleKey ? 'この問題のカギを閉じる' : 'この問題のカギを見る'}</button>
+      ${appState.showPuzzleKey ? `<p class="puzzle-key-text">${formatMessage(keyText)}</p>` : ''}
     </div>`;
 }
 
@@ -1284,6 +1727,8 @@ function renderResult() {
         <p class="star-rating">${getHintStars(appState.hintCount, appState.wrongAnswerCount)}</p>
       </div>
       <p class="small">よく考えたね！</p>
+      ${renderSmartClearBlock(appState.resultSmartClear, false)}
+      ${renderPuzzleKeyBlock(buildPuzzleKey(appState.currentPuzzle, boardModeKey))}
       <div class="row">
         <button class="primary-btn" data-action="next-puzzle">もう1問</button>
         <button class="ghost-btn" data-action="title-again">タイトルにもどる</button>
@@ -1293,12 +1738,13 @@ function renderResult() {
     const best = appState.resultPreviousBest;
     inner = `
       <h2>1問クリア！</h2>
-      ${renderEvaluationBlock(appState.resultEvaluation)}
       <div class="stat-grid stat-grid-2">
         ${renderStatItem('クリアタイム', formatResultTime(appState.resultElapsed))}
         ${renderStatItem('ベストタイム', best === null || best === undefined ? '初挑戦' : formatResultTime(best))}
       </div>
+      ${renderEvaluationBlock(appState.resultEvaluation)}
       ${appState.isNewRecord ? '<p class="record-badge">自己ベスト更新！</p>' : ''}
+      ${renderSmartClearBlock(appState.resultSmartClear, false)}
       <div class="row">
         <button class="primary-btn" data-action="play-again">もう1回</button>
         <button class="ghost-btn" data-action="title-again">タイトルへ</button>
@@ -1311,14 +1757,15 @@ function renderResult() {
     const questionItems = appState.threeQuestionTimes.map((time, index) => renderStatItem(`第${index + 1}問`, formatResultTime(time))).join('');
     inner = `
       <h2>3問クリア！</h2>
-      ${renderEvaluationBlock(appState.resultEvaluation)}
       <div class="stat-grid stat-grid-3">
         ${renderStatItem('1問平均', formatResultTime(averageSeconds))}
         ${renderStatItem('合計タイム', formatResultTime(appState.resultElapsed), 'stat-item-emphasis')}
         ${renderStatItem('ベストタイム', best === null || best === undefined ? '初挑戦' : formatResultTime(best))}
         ${questionItems}
       </div>
+      ${renderEvaluationBlock(appState.resultEvaluation)}
       ${appState.isNewRecord ? '<p class="record-badge">自己ベスト更新！</p>' : ''}
+      ${renderSmartClearBlock(appState.resultSmartClear, true)}
       <div class="row">
         <button class="primary-btn" data-action="play-again">もう1回</button>
         <button class="ghost-btn" data-action="title-again">タイトルへ</button>
@@ -1355,6 +1802,29 @@ function renderResult() {
         <button class="primary-btn" data-action="play-again">もう1回</button>
         <button class="ghost-btn" data-action="title-again">タイトルへ</button>
       </div>`;
+  } else if (appState.mode === 'mission') {
+    const board = getBoardDefinition('standard');
+    const completedBoardHtml = renderBoardGrid(
+      board.cols,
+      board.rows,
+      appState.currentPuzzle.columnSums,
+      appState.currentPuzzle.rowProducts,
+      appState.boardValues.map((value, index) => {
+        const row = Math.floor(index / board.cols);
+        const col = index % board.cols;
+        return `<div class="board-cell occupied" style="grid-column: ${col + 3}; grid-row: ${row + 3};"><span class="cell-value">${value}</span></div>`;
+      }).join(''),
+    );
+    inner = `
+      <h2>${MISSION_INFO[appState.missionType].label}　クリア！</h2>
+      ${appState.resultMissionText ? `<div class="smart-clear-block"><p class="smart-clear-comment">${formatMessage(appState.resultMissionText)}</p></div>` : ''}
+      ${renderPuzzleKeyBlock(buildCurrentMissionKey())}
+      <div class="row">
+        <button class="primary-btn" data-action="play-again">同じミッションをもう1問</button>
+        <button class="ghost-btn" data-action="show-missions">ミッション選択へ</button>
+        <button class="ghost-btn" data-action="title-again">タイトルへ</button>
+      </div>
+      ${completedBoardHtml}`;
   }
   appEl.innerHTML = `<div class="card result-card">${inner}</div>`;
 }

@@ -67,6 +67,46 @@ function scoreDifficulty(rowProducts, columnSums, numbers, rows, cols) {
   return branching;
 }
 
+// For each of the `rows + cols` hint slots, maps "the signature of the other
+// 5 hints" -> how many permutations of `numbers` share that signature. Used
+// to find, for a given puzzle, which single hint can be hidden while the
+// remaining 5 still pin down a unique solution (the かくされたヒント mission).
+// Built once per board size and reused across every candidate puzzle, since
+// it doesn't depend on which specific puzzle is being checked.
+function buildHiddenHintMaps(all, rows, cols) {
+  const numHints = rows + cols;
+  const maps = Array.from({ length: numHints }, () => new Map());
+  all.forEach((arr) => {
+    const { rowProducts, columnSums } = computeHints(arr, rows, cols);
+    const full = [...rowProducts, ...columnSums];
+    for (let slot = 0; slot < numHints; slot += 1) {
+      const key = full.filter((_, i) => i !== slot).join(',');
+      const map = maps[slot];
+      map.set(key, (map.get(key) || 0) + 1);
+    }
+  });
+  return maps;
+}
+
+function computeHiddenHintCandidates(entry, maps, rows, cols) {
+  const full = [...entry.rowProducts, ...entry.columnSums];
+  const numHints = rows + cols;
+  const candidates = [];
+  for (let slot = 0; slot < numHints; slot += 1) {
+    const key = full.filter((_, i) => i !== slot).join(',');
+    const count = maps[slot].get(key) || 0;
+    if (count === 1) {
+      const isRow = slot < rows;
+      candidates.push({
+        type: isRow ? 'rowProduct' : 'columnSum',
+        index: isRow ? slot : slot - rows,
+        value: full[slot],
+      });
+    }
+  }
+  return candidates;
+}
+
 function shuffle(list) {
   const copy = list.slice();
   for (let i = copy.length - 1; i > 0; i -= 1) {
@@ -76,7 +116,7 @@ function shuffle(list) {
   return copy;
 }
 
-function buildPuzzles(sizeLabel, numbers, rows, cols, targetCount) {
+function buildPuzzles(sizeLabel, numbers, rows, cols, targetCount, withHiddenHints = false) {
   const all = permute(numbers);
   const signatures = new Map();
   all.forEach((arr) => {
@@ -116,12 +156,14 @@ function buildPuzzles(sizeLabel, numbers, rows, cols, targetCount) {
   });
 
   const finalList = shuffle(selected).slice(0, Math.min(targetCount, selected.length));
+  const hiddenHintMaps = withHiddenHints ? buildHiddenHintMaps(all, rows, cols) : null;
   return finalList.map((entry, index) => ({
     id: `${sizeLabel}-${index + 1}`,
     answer: entry.answer,
     rowProducts: entry.rowProducts,
     columnSums: entry.columnSums,
     difficulty: entry.difficulty,
+    ...(withHiddenHints ? { hiddenHintCandidates: computeHiddenHintCandidates(entry, hiddenHintMaps, rows, cols) } : {}),
   }));
 }
 
@@ -134,7 +176,7 @@ fs.writeFileSync(
 );
 fs.writeFileSync(
   path.join(outDir, 'puzzles-3x3.json'),
-  JSON.stringify(buildPuzzles('3x3', [1, 2, 3, 4, 5, 6, 7, 8, 9], 3, 3, 400), null, 2),
+  JSON.stringify(buildPuzzles('3x3', [1, 2, 3, 4, 5, 6, 7, 8, 9], 3, 3, 400, true), null, 2),
 );
 
 console.log('generated puzzle data');
