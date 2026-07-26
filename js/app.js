@@ -58,7 +58,6 @@ const appState = {
   reveal: null,
   records: readRecords(),
   settings: readSettings(),
-  tutorialSeen: !!localStorage.getItem('kake-tashi-tutorial-seen'),
   boardShake: false,
   lastPuzzleKey: null,
   lastRecordMessage: '',
@@ -162,12 +161,6 @@ function handleClick(event) {
     case 'toggle-sound': appState.settings.sound = !appState.settings.sound; saveSettings(appState.settings); break;
     case 'set-chip-color': appState.settings.chipColor = actionEl.dataset.color; saveSettings(appState.settings); break;
     case 'reset-records': if (confirm('これまでの記録をすべて消しますか？')) { appState.records = resetRecords(); } break;
-    case 'start-tutorial':
-    case 'skip-tutorial':
-      appState.tutorialSeen = true;
-      localStorage.setItem('kake-tashi-tutorial-seen', '1');
-      appState.screen = 'title';
-      break;
     case 'start-challenge': appState.mode = 'challenge'; startChallenge(); break;
     default: break;
   }
@@ -764,9 +757,7 @@ function render() {
     return;
   }
   switch (appState.screen) {
-    case 'title':
-      if (!appState.tutorialSeen) renderTutorial(); else renderTitle();
-      break;
+    case 'title': renderTitle(); break;
     case 'play-style': renderPlayStyle(); break;
     case 'howto': renderHowTo(); break;
     case 'records': renderRecords(); break;
@@ -793,7 +784,7 @@ function renderTitle() {
         <button class="secondary-btn main-mode-btn" data-action="start-challenge">3分チャレンジ</button>
       </div>
       <div class="button-grid sub-grid">
-        <button class="ghost-btn small-btn" data-action="show-howto">あそびかた</button>
+        <button class="ghost-btn small-btn" data-action="show-howto">遊び方</button>
         <button class="ghost-btn small-btn" data-action="show-records">記録</button>
         <button class="ghost-btn small-btn" data-action="show-settings">設定</button>
       </div>
@@ -833,7 +824,7 @@ function renderRulesBody() {
         <li>全部のマスが埋まったら「解答する」を押して確かめよう。</li>
       </ol>
       <div class="tutorial-example">
-        ${renderBoardGrid(3, 2, [5, 7, 9], [6, 120], [1, 2, 3, 4, 5, 6].map((value, index) => {
+        ${renderBoardGrid(3, 2, [5, 7, 9], [15, 48], [1, 5, 3, 4, 2, 6].map((value, index) => {
           const row = Math.floor(index / 3);
           const col = index % 3;
           return `<div class="board-cell occupied" style="grid-column: ${col + 3}; grid-row: ${row + 3};"><span class="cell-value">${value}</span></div>`;
@@ -845,20 +836,8 @@ function renderRulesBody() {
 function renderHowTo() {
   appEl.innerHTML = `
     <div class="card">
-      <nav class="topbar"><button class="back" data-action="back">← もどる</button><span class="mode-label">あそびかた</span></nav>
+      <nav class="topbar"><button class="back" data-action="back">← もどる</button><span class="mode-label">遊び方</span></nav>
       ${renderRulesBody()}
-    </div>`;
-}
-
-function renderTutorial() {
-  appEl.innerHTML = `
-    <div class="card">
-      <div class="hero"><h1>ようこそ！</h1><p class="subtitle">はじめる前に、あそびかたを見てみよう</p></div>
-      ${renderRulesBody()}
-      <div class="row">
-        <button class="primary-btn" data-action="start-tutorial">はじめる</button>
-        <button class="ghost-btn" data-action="skip-tutorial">スキップ</button>
-      </div>
     </div>`;
 }
 
