@@ -53,11 +53,16 @@ nav.topbar { display:flex; justify-content:space-between; align-items:center; ga
 .board-cell.shake { animation: shake 0.25s ease-in-out; }
 .board-cell.fixed { background: var(--fixed); border-color: var(--fixed-border); color: var(--fixed-ink); border-style: double; border-width: 4px; }
 .number-panel { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin: 10px 0 8px; }
+.number-panel-grid3 { display:grid; grid-template-columns: repeat(3, min(16vw, 64px)); justify-content:center; }
+.number-panel-grid5 { display:grid; grid-template-columns: repeat(5, min(16vw, 64px)); justify-content:center; }
 .number-chip { width: min(16vw, 64px); height: min(16vw, 64px); max-width: 64px; max-height: 64px; border-radius: 16px; border: 2px solid var(--chip-border); background: var(--chip); color: var(--chip-ink); font-size: 1.35rem; font-weight: 800; font-family: "Hiragino Maru Gothic ProN", "UD Digi Kyokasho N-B", "Rounded Mplus 1c", "Yu Gothic", sans-serif; display:flex; align-items:center; justify-content:center; touch-action: none; }
 .number-chip.used { opacity: 0.35; }
 .number-chip.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
-.controls { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top: 6px; }
+.controls { display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:nowrap; margin-top: 6px; }
 .controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+.controls .ghost-btn { padding: 9px 10px; font-size: 0.82rem; white-space: nowrap; }
+.controls [data-action="hint"] { min-width: 92px; }
+.controls .primary-btn { padding: 10px 14px; }
 .message { min-height: 34px; text-align:center; color: var(--warn); font-weight:700; margin-top:6px; }
 .badge.timer { font-variant-numeric: tabular-nums; }
 .badge.timer.warn { background: rgba(242,184,75,0.25); color: #8a5a00; }

@@ -30,7 +30,7 @@ const CHALLENGE_TITLES = [
 // 1問あたりの基準時間(ms)。3問モードは合計を3で割った平均をこの基準と比べる。
 const TIME_ATTACK_BASE_TIME_MS = {
   easy: 10_000,
-  standard: 45_000,
+  standard: 40_000,
 };
 
 // multiplier は「基準時間の何倍以内か」の上限。評価順に並んでいるので、
@@ -865,7 +865,7 @@ function ensureAudio() {
   if (AudioCtor) audioCtx = new AudioCtor();
 }
 
-function playTone(freq, durationMs, type) {
+function playTone(freq, durationMs, type, peakGain = 0.12) {
   if (!appState.settings.sound || !audioCtx) return;
   const now = audioCtx.currentTime;
   const osc = audioCtx.createOscillator();
@@ -873,7 +873,7 @@ function playTone(freq, durationMs, type) {
   osc.type = type || 'sine';
   osc.frequency.value = freq;
   gain.gain.setValueAtTime(0.001, now);
-  gain.gain.exponentialRampToValueAtTime(0.12, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(peakGain, now + 0.02);
   gain.gain.exponentialRampToValueAtTime(0.001, now + durationMs / 1000);
   osc.connect(gain);
   gain.connect(audioCtx.destination);
@@ -927,15 +927,19 @@ function playDropSound() {
   playTone(680, 90, 'square');
 }
 
+// ~60% of the standard tone volume - the countdown fires every game start,
+// so it's kept quieter than one-off feedback sounds.
+const COUNTDOWN_VOLUME = 0.12 * 0.6;
+
 // "3", "2", "1" ticks before a game starts.
 function playCountdownTickSound() {
-  playTone(500, 110, 'square');
+  playTone(500, 110, 'square', COUNTDOWN_VOLUME);
 }
 
 // The final "START!" beat of the countdown.
 function playCountdownGoSound() {
-  playTone(700, 100, 'square');
-  setTimeout(() => playTone(1000, 220, 'square'), 100);
+  playTone(700, 100, 'square', COUNTDOWN_VOLUME);
+  setTimeout(() => playTone(1000, 220, 'square', COUNTDOWN_VOLUME), 100);
 }
 
 // Once-per-second tick for the final 10 seconds of the 3-minute challenge.
@@ -1186,7 +1190,7 @@ function renderGame() {
           <span class="cell-value">${value ?? ''}</span>
         </button>`;
       }).join(''), appState.wrongColIndices, appState.wrongRowIndices)}
-      <div class="number-panel">
+      <div class="number-panel ${boardModeKey === 'easy' ? 'number-panel-grid3' : 'number-panel-grid5'}">
         ${numbers.map((number) => {
           const used = appState.boardValues.includes(number);
           return `<button class="number-chip ${used ? 'used' : ''} ${appState.selectedValue === number ? 'selected' : ''}" data-action="number" data-value="${number}">${number}</button>`;
