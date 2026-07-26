@@ -26,6 +26,41 @@ const CHALLENGE_TITLES = [
   { min: 7, max: Infinity, title: 'パズルレジェンド', text: '驚異の記録！数字の迷宮を完全に攻略したね！' },
 ];
 
+// 1問あたりの基準時間(ms)。3問モードは合計を3で割った平均をこの基準と比べる。
+const TIME_ATTACK_BASE_TIME_MS = {
+  easy: 10_000,
+  standard: 45_000,
+};
+
+// multiplier は「基準時間の何倍以内か」の上限。評価順に並んでいるので、
+// 配列の先頭から見て最初に条件を満たした段位を採用する。
+const TIME_ATTACK_RANKS = [
+  { rank: 'MAX', multiplier: 1, title: 'かけ×たし+レジェンド', singleComment: '驚異のスピード！積と和のつながりを一瞬で見抜いたね！', tripleComment: '驚異のスピードで3問完全制覇！計算力も集中力も限界突破！' },
+  { rank: 'SS', multiplier: 1.5, title: '超速ロジックマスター', singleComment: 'ものすごい速さでクリア！計算力もひらめきも最高クラス！', tripleComment: '圧倒的な速さで3問クリア！高い集中力を最後まで保てたね！' },
+  { rank: 'S', multiplier: 2, title: '閃光ナンバーエース', singleComment: 'とても速い！数字の組み合わせを鋭く見つけられたね！', tripleComment: '3問を鮮やかに突破！数字を見抜く力がとても鋭い！' },
+  { rank: 'A', multiplier: 2.5, title: 'ひらめき名人', singleComment: 'すばやく正確に完成！積と和を上手に使いこなせているね！', tripleComment: '3問続けてすばやく正解！安定した計算力と推理力だね！' },
+  { rank: 'B', multiplier: 3, title: 'ロジックファイター', singleComment: 'ナイスクリア！条件を整理して、しっかり答えを導けたね！', tripleComment: '3問をテンポよく完成！条件を整理する力がしっかり身についているよ！' },
+  { rank: 'C', multiplier: 4, title: 'じっくり推理家', singleComment: '落ち着いて考え、正解までたどり着けたね！その集中力がすばらしい！', tripleComment: '3問すべてクリア！落ち着いて一つずつ答えを導けたね！' },
+  { rank: 'D', multiplier: 5, title: 'ねばりの探究者', singleComment: '何度も考えながら答えを見つけたね！ねばり強い推理が光っているよ！', tripleComment: '難しい3問にじっくり向き合い、最後まで解き切ったね！' },
+  { rank: 'E', multiplier: 6, title: '不屈のチャレンジャー', singleComment: '難しい問題に最後まで向き合い、見事に解き切ったね！', tripleComment: '長い挑戦でもあきらめなかったね！その集中力とねばり強さがすばらしい！' },
+  { rank: 'F', multiplier: Infinity, title: '未来のロジックマスター', singleComment: 'まずはクリアできたことが大きな一歩！次は今回の記録を少し超えてみよう！', tripleComment: '3問すべて完成させたことが大きな成果！次は少しずつタイムを縮めよう！' },
+];
+
+// Shared by both 1問 and 3問 time-attack results. 3問 evaluates on the
+// per-question average (totalTimeMs / 3), never the raw total, and never on
+// the rounded/displayed time - always the actual measured milliseconds.
+function getTimeAttackEvaluation({ boardType, questionCount, totalTimeMs }) {
+  const baseTimeMs = TIME_ATTACK_BASE_TIME_MS[boardType];
+  const evaluationTimeMs = questionCount === 3 ? totalTimeMs / 3 : totalTimeMs;
+  const entry = TIME_ATTACK_RANKS.find((item) => evaluationTimeMs <= baseTimeMs * item.multiplier);
+  return {
+    rank: entry.rank,
+    title: entry.title,
+    comment: questionCount === 3 ? entry.tripleComment : entry.singleComment,
+    evaluationTimeMs,
+  };
+}
+
 const appState = {
   screen: 'title',
   mode: null,
@@ -35,10 +70,13 @@ const appState = {
   boardValues: [],
   fixedCells: [],
   initialFixedCells: [],
+  wrongRowIndices: [],
+  wrongColIndices: [],
   selectedValue: null,
   selectedCellIndex: null,
   message: '',
   hintCount: 0,
+  wrongAnswerCount: 0,
   timer: new PuzzleTimer(),
   countdown: null,
   countdownTimer: null,
@@ -57,6 +95,7 @@ const appState = {
   resultPreviousBest: null,
   resultElapsed: 0,
   isNewRecord: false,
+  resultEvaluation: null,
   resultChallenge: null,
   reveal: null,
   records: readRecords(),
@@ -335,7 +374,10 @@ function resetBoard() {
   appState.selectedValue = null;
   appState.selectedCellIndex = null;
   appState.hintCount = 0;
+  appState.wrongAnswerCount = 0;
   appState.message = '';
+  appState.wrongRowIndices = [];
+  appState.wrongColIndices = [];
   render();
 }
 
@@ -390,6 +432,8 @@ function applyPuzzleState(puzzleState) {
   appState.initialFixedCells = Array.from(puzzleState.fixed);
   appState.selectedValue = null;
   appState.selectedCellIndex = null;
+  appState.wrongRowIndices = [];
+  appState.wrongColIndices = [];
 }
 
 function getChallengeFixedCount(questionNumber) {
@@ -423,9 +467,14 @@ function getChallengeTitle(clearCount) {
   return CHALLENGE_TITLES.find((entry) => clearCount >= entry.min && clearCount <= entry.max) || CHALLENGE_TITLES[0];
 }
 
-function getHintStars(hintCount) {
-  if (hintCount <= 0) return '★★★';
-  if (hintCount === 1) return '★★☆';
+// A mistake counts the same as one hint toward knocking a star off: no
+// hints and no wrong submissions is the only way to reach 3 stars, one
+// hint (or any mistakes with none) drops to 2, and anything beyond that
+// bottoms out at 1.
+function getHintStars(hintCount, wrongAnswerCount) {
+  const penalty = hintCount + (wrongAnswerCount > 0 ? 1 : 0);
+  if (penalty <= 0) return '★★★';
+  if (penalty === 1) return '★★☆';
   return '★☆☆';
 }
 
@@ -530,6 +579,7 @@ function startGame() {
   clearIntervalsOnly();
   appState.message = '';
   appState.hintCount = 0;
+  appState.wrongAnswerCount = 0;
   appState.boardShake = false;
   appState.lastRecordMessage = '';
   appState.timer.reset();
@@ -598,7 +648,7 @@ function submitAnswer() {
   if (result.valid) {
     onCorrectAnswer();
   } else {
-    onWrongAnswer();
+    onWrongAnswer(result);
   }
 }
 
@@ -643,6 +693,11 @@ function finishCorrectFlow() {
       appState.records.timeAttack[recordKey] = elapsed;
       saveRecords(appState.records);
     }
+    appState.resultEvaluation = getTimeAttackEvaluation({
+      boardType: appState.puzzleSize,
+      questionCount: 1,
+      totalTimeMs: elapsed * 1000,
+    });
     stopUiTicker();
     appState.screen = 'result';
     render();
@@ -672,6 +727,11 @@ function finishCorrectFlow() {
       appState.records.timeAttack[recordKey] = totalElapsed;
       saveRecords(appState.records);
     }
+    appState.resultEvaluation = getTimeAttackEvaluation({
+      boardType: appState.puzzleSize,
+      questionCount: 3,
+      totalTimeMs: totalElapsed * 1000,
+    });
     stopUiTicker();
     appState.screen = 'result';
     render();
@@ -707,12 +767,36 @@ function finishCorrectFlow() {
   }
 }
 
-function onWrongAnswer() {
+function onWrongAnswer(result) {
   appState.message = 'おしい！どこかがちがうよ。\nもう一度見直してみよう！';
   if (appState.mode === 'challenge') appState.challengeMistakeThisPuzzle = true;
+  if (appState.mode === 'leisure') appState.wrongAnswerCount += 1;
   playWrongSound();
   appState.boardShake = true;
   setTimeout(() => { appState.boardShake = false; render(); }, 300);
+
+  const puzzle = appState.currentPuzzle;
+  if (result && result.rows && result.cols) {
+    appState.wrongRowIndices = result.rows.reduce((acc, value, index) => {
+      if (value !== puzzle.rowProducts[index]) acc.push(index);
+      return acc;
+    }, []);
+    appState.wrongColIndices = result.cols.reduce((acc, value, index) => {
+      if (value !== puzzle.columnSums[index]) acc.push(index);
+      return acc;
+    }, []);
+  } else {
+    appState.wrongRowIndices = [];
+    appState.wrongColIndices = [];
+  }
+  // Mark the mismatched row-product / column-sum numbers with a "×" for
+  // about a second, then clear it back off.
+  setTimeout(() => {
+    appState.wrongRowIndices = [];
+    appState.wrongColIndices = [];
+    render();
+  }, 1000);
+
   render();
 }
 
@@ -1005,14 +1089,14 @@ function renderSettings() {
 // labels line up exactly with their column/row and that every inter-cell gap
 // (horizontal and vertical alike) is identical, since it is all one grid
 // rather than several independently-sized ones trying to visually coincide.
-function renderBoardGrid(cols, rows, columnSums, rowProducts, cellsHtml) {
+function renderBoardGrid(cols, rows, columnSums, rowProducts, cellsHtml, wrongCols = [], wrongRows = []) {
   const track = `clamp(48px, 16vw, 64px)`;
   return `
     <div class="board-grid" style="grid-template-columns: max-content max-content repeat(${cols}, ${track}); grid-template-rows: max-content max-content repeat(${rows}, ${track});">
       <div class="group-label col-group-label" style="grid-column: 3 / -1; grid-row: 1;">たての和</div>
-      ${columnSums.map((value, i) => `<div class="axis-label col-label" style="grid-column: ${i + 3}; grid-row: 2;">${value}</div>`).join('')}
+      ${columnSums.map((value, i) => `<div class="axis-label col-label ${wrongCols.includes(i) ? 'wrong' : ''}" style="grid-column: ${i + 3}; grid-row: 2;">${value}</div>`).join('')}
       <div class="group-label row-group-label" style="grid-column: 1; grid-row: 3 / -1;">横の積</div>
-      ${rowProducts.map((value, i) => `<div class="axis-label row-label" style="grid-column: 2; grid-row: ${i + 3};">${value}</div>`).join('')}
+      ${rowProducts.map((value, i) => `<div class="axis-label row-label ${wrongRows.includes(i) ? 'wrong' : ''}" style="grid-column: 2; grid-row: ${i + 3};">${value}</div>`).join('')}
       <div class="board-panel-bg" style="grid-column: 3 / -1; grid-row: 3 / -1;"></div>
       ${cellsHtml}
     </div>`;
@@ -1084,7 +1168,7 @@ function renderGame() {
         return `<button class="board-cell ${fixed ? 'fixed' : ''} ${value !== null ? 'occupied' : ''} ${selected ? 'selected' : ''} ${appState.boardShake ? 'shake' : ''}" style="grid-column: ${col + 3}; grid-row: ${row + 3};" data-action="select-cell" data-index="${index}">
           <span class="cell-value">${value ?? ''}</span>
         </button>`;
-      }).join(''))}
+      }).join(''), appState.wrongColIndices, appState.wrongRowIndices)}
       <div class="number-panel">
         ${numbers.map((number) => {
           const used = appState.boardValues.includes(number);
@@ -1114,17 +1198,59 @@ function renderReveal() {
     </div>`;
 }
 
+const RANK_TIER_CLASS = {
+  MAX: 'rank-tier-max',
+  SS: 'rank-tier-high',
+  S: 'rank-tier-high',
+  A: 'rank-tier-mid',
+  B: 'rank-tier-mid',
+  C: 'rank-tier-calm',
+  D: 'rank-tier-calm',
+  E: 'rank-tier-calm',
+  F: 'rank-tier-calm',
+};
+
+// Shared by the 1問 and 3問 time-attack result screens so the rank/title/
+// comment markup isn't duplicated between them.
+function renderEvaluationBlock(evaluation) {
+  if (!evaluation) return '';
+  const tierClass = RANK_TIER_CLASS[evaluation.rank] || '';
+  return `
+    <div class="rank-block ${tierClass}">
+      <p class="rank-badge">評価 ${evaluation.rank}</p>
+      <p class="rank-title">${evaluation.title}</p>
+      <p class="rank-comment">${evaluation.comment}</p>
+    </div>`;
+}
+
 function renderResult() {
   let inner = '';
   if (appState.mode === 'leisure') {
+    const boardModeKey = getCurrentBoardModeKey();
+    const board = getBoardDefinition(boardModeKey);
+    const completedBoardHtml = renderBoardGrid(
+      board.cols,
+      board.rows,
+      appState.currentPuzzle.columnSums,
+      appState.currentPuzzle.rowProducts,
+      appState.boardValues.map((value, index) => {
+        const row = Math.floor(index / board.cols);
+        const col = index % board.cols;
+        const fixed = appState.fixedCells.includes(index);
+        return `<div class="board-cell occupied ${fixed ? 'fixed' : ''}" style="grid-column: ${col + 3}; grid-row: ${row + 3};"><span class="cell-value">${value}</span></div>`;
+      }).join(''),
+    );
     inner = `
-      <h2>正解！</h2>
-      <p class="star-rating">${getHintStars(appState.hintCount)}</p>
+      <div class="result-title-row">
+        <h2>正解！</h2>
+        <p class="star-rating">${getHintStars(appState.hintCount, appState.wrongAnswerCount)}</p>
+      </div>
       <p class="small">よく考えたね！</p>
       <div class="row">
         <button class="primary-btn" data-action="next-puzzle">もう1問</button>
         <button class="ghost-btn" data-action="title-again">タイトルにもどる</button>
-      </div>`;
+      </div>
+      ${completedBoardHtml}`;
   } else if (appState.mode === 'time-attack') {
     const best = appState.resultPreviousBest;
     inner = `
@@ -1133,6 +1259,7 @@ function renderResult() {
         <div>クリアタイム　${formatResultTime(appState.resultElapsed)}</div>
         <div>自己ベスト　　${best === null || best === undefined ? '初挑戦' : formatResultTime(best)}</div>
       </div>
+      ${renderEvaluationBlock(appState.resultEvaluation)}
       ${appState.isNewRecord ? '<p class="record-badge">自己ベスト更新！</p>' : ''}
       <div class="row">
         <button class="primary-btn" data-action="play-again">もう1回</button>
@@ -1141,13 +1268,16 @@ function renderResult() {
   } else if (appState.mode === 'three-questions') {
     const best = appState.resultPreviousBest;
     const questionLines = appState.threeQuestionTimes.map((time, index) => `<div>第${index + 1}問　${formatResultTime(time)}</div>`).join('');
+    const averageSeconds = appState.resultElapsed / 3;
     inner = `
       <h2>3問クリア！</h2>
       <div class="list">
         <div>合計タイム　${formatResultTime(appState.resultElapsed)}</div>
+        <div class="small">1問平均　${formatResultTime(averageSeconds)}</div>
         ${questionLines}
         <div>自己ベスト　${best === null || best === undefined ? '初挑戦' : formatResultTime(best)}</div>
       </div>
+      ${renderEvaluationBlock(appState.resultEvaluation)}
       ${appState.isNewRecord ? '<p class="record-badge">自己ベスト更新！</p>' : ''}
       <div class="row">
         <button class="primary-btn" data-action="play-again">もう1回</button>

@@ -41,7 +41,9 @@ nav.topbar { display:flex; justify-content:space-between; align-items:center; ga
 .group-label { display:flex; align-items:center; justify-content:center; background: var(--accent-soft); color: var(--accent); font-weight:800; font-size: 0.8rem; border-radius: 999px; padding: 6px 14px; white-space:nowrap; }
 .col-group-label { align-self: end; justify-self: center; margin-bottom: -6px; }
 .row-group-label { writing-mode: vertical-rl; align-self: center; justify-self: end; padding: 14px 6px; margin-right: 6px; }
-.axis-label { display:flex; align-items:center; justify-content:center; font-weight:800; color: var(--accent); font-size: 1.05rem; }
+.axis-label { position: relative; display:flex; align-items:center; justify-content:center; font-weight:800; color: var(--accent); font-size: 1.05rem; }
+.axis-label.wrong::after { content: '×'; position: absolute; inset: 0; display:flex; align-items:center; justify-content:center; color: var(--warn); font-size: 1.6em; font-weight: 900; background: rgba(255,255,255,0.85); border-radius: 10px; animation: wrongMarkPop 0.2s ease; }
+@keyframes wrongMarkPop { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .row-label { justify-content:flex-end; padding-right: 4px; }
 .board-panel-bg { background: linear-gradient(180deg, #fefefe 0%, #f8fbff 100%); border: 2px solid rgba(59,130,246,0.15); border-radius: 20px; }
 .board-cell { position: relative; width: 100%; height: 100%; border-radius: 16px; border: 2px solid var(--border); background: white; display:flex; flex-direction: column; align-items:center; justify-content:center; font-size: 1.25rem; font-weight: 800; font-family: "Hiragino Maru Gothic ProN", "UD Digi Kyokasho N-B", "Rounded Mplus 1c", "Yu Gothic", sans-serif; transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease; touch-action: none; }
@@ -71,7 +73,24 @@ nav.topbar { display:flex; justify-content:space-between; align-items:center; ga
 .reveal-item { opacity: 0; transform: translateY(6px); animation: revealFade 0.4s ease forwards; background: var(--accent-soft); color: var(--accent); border-radius: 12px; padding: 8px 12px; font-weight: 700; }
 .result-card { text-align: center; }
 .record-badge { color: #b8860b; font-weight: 800; background: rgba(242,184,75,0.18); border-radius: 14px; padding: 8px 12px; margin: 8px 0; }
-.star-rating { font-size: 2.4rem; color: var(--gold); text-shadow: 0 2px 6px rgba(242,184,75,0.4); margin: 6px 0; letter-spacing: 0.15em; }
+.rank-block { margin: 12px 0; padding: 14px; border-radius: 18px; text-align: center; }
+.rank-badge { font-size: 1.9rem; font-weight: 900; margin: 0 0 2px; letter-spacing: 0.05em; }
+.rank-title { font-size: 1.05rem; font-weight: 800; margin: 0 0 8px; }
+.rank-comment { font-size: 0.9rem; color: var(--ink); margin: 0; line-height: 1.5; }
+.rank-tier-max { background: linear-gradient(135deg, #fff6da, #ffe9a8); animation: rankGlow 1.6s ease-in-out infinite; }
+.rank-tier-max .rank-badge { color: #b8860b; text-shadow: 0 2px 6px rgba(242,184,75,0.5); }
+.rank-tier-max .rank-title { color: #a8710a; }
+.rank-tier-high { background: linear-gradient(135deg, var(--accent-soft), #d8f5ee); box-shadow: 0 6px 16px rgba(59,130,246,0.18); }
+.rank-tier-high .rank-badge { color: var(--accent); }
+.rank-tier-high .rank-title { color: #1f6fb8; }
+.rank-tier-mid { background: var(--accent-soft); }
+.rank-tier-mid .rank-badge { color: var(--accent); }
+.rank-tier-calm { background: #fdf6ec; }
+.rank-tier-calm .rank-badge { color: var(--mint); }
+@keyframes rankGlow { 0%,100% { box-shadow: 0 0 0 2px rgba(242,184,75,0.5), 0 8px 20px rgba(242,184,75,0.35); } 50% { box-shadow: 0 0 0 2px rgba(242,184,75,0.7), 0 8px 28px rgba(242,184,75,0.5); } }
+.star-rating { font-size: 1.8rem; color: var(--gold); text-shadow: 0 2px 6px rgba(242,184,75,0.4); margin: 0; letter-spacing: 0.1em; }
+.result-title-row { display:flex; align-items:center; justify-content:center; gap: 10px; }
+.result-title-row h2 { margin: 0; }
 .rule-list { text-align: left; padding-left: 1.2em; margin: 0 0 10px; color: var(--ink); line-height: 1.6; }
 .sub-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
 .copyright { text-align: center; font-size: 0.7rem; color: var(--muted); opacity: 0.7; margin: 16px 0 0; }
