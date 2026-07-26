@@ -460,7 +460,7 @@ function stopUiTicker() {
 // from under it, making buttons like 解答する or もどる seem unresponsive.
 function getChallengeRemainingSeconds() {
   if (appState.challengeGracePeriodActive) {
-    return appState.challengeGraceCountdown ? appState.challengeGraceCountdown.getRemainingSeconds() : 20;
+    return appState.challengeGraceCountdown ? appState.challengeGraceCountdown.getRemainingSeconds() : 30;
   }
   return appState.challengeCountdown ? appState.challengeCountdown.getRemainingSeconds() : 180;
 }
@@ -480,11 +480,16 @@ function updateLiveTimerBadge() {
   const badge = document.querySelector('.game-card nav.topbar .badge.timer');
   if (!badge) return;
   if (appState.mode === 'challenge') {
-    const remaining = getChallengeRemainingSeconds();
-    const urgency = remaining <= 10 ? 'danger' : remaining <= 30 ? 'warn' : '';
-    badge.textContent = `残り ${formatLiveTime(remaining)}`;
     badge.classList.remove('warn', 'danger');
-    if (urgency) badge.classList.add(urgency);
+    if (appState.challengeGracePeriodActive) {
+      badge.textContent = '最終問題';
+      badge.classList.add('danger');
+    } else {
+      const remaining = getChallengeRemainingSeconds();
+      const urgency = remaining <= 10 ? 'danger' : remaining <= 30 ? 'warn' : '';
+      badge.textContent = `残り ${formatLiveTime(remaining)}`;
+      if (urgency) badge.classList.add(urgency);
+    }
   } else if (appState.mode === 'time-attack' || appState.mode === 'three-questions') {
     badge.textContent = formatLiveTime(appState.timer.getElapsedSeconds());
   }
@@ -570,7 +575,7 @@ function startChallenge() {
           // Main time's up: the puzzle on screen becomes the final one, with
           // a 20-second grace window to still solve it before time-up.
           appState.challengeGracePeriodActive = true;
-          appState.challengeGraceCountdown = new CountdownTimer(20);
+          appState.challengeGraceCountdown = new CountdownTimer(30);
           appState.challengeGraceCountdown.start();
           appState.message = '最終問題！';
           render();
@@ -886,7 +891,7 @@ function renderTitle() {
   appEl.innerHTML = `
     <div class="card screen-title translucent-card">
       <div class="hero">
-        <div class="badge">積と和で解くロジックゲーム</div>
+        <div class="badge title-badge">思考力をきたえる計算ロジックゲーム</div>
         <h1>かけ×たし+パネル</h1>
         <p class="subtitle">積と和のヒントから表を完成させよう！</p>
       </div>
@@ -961,8 +966,8 @@ function renderRecords() {
     ['イージー 3問', fmt(records.timeAttack.easy3)],
     ['スタンダード 1問', fmt(records.timeAttack.standard1)],
     ['スタンダード 3問', fmt(records.timeAttack.standard3)],
-    ['3分チャレンジ 最高クリア数', `${records.threeMinute.bestClearCount}問`],
-    ['3分チャレンジ 最高連続ノーミス', `${records.threeMinute.bestStreak}問`],
+    ['3分チャレンジ<br>最高クリア数', `${records.threeMinute.bestClearCount}問`],
+    ['3分チャレンジ<br>最高連続ノーミス', `${records.threeMinute.bestStreak}問`],
   ];
   appEl.innerHTML = `
     <div class="card">
@@ -1040,9 +1045,13 @@ function renderGame() {
 
   let timerHtml;
   if (appState.mode === 'challenge') {
-    const remaining = getChallengeRemainingSeconds();
-    const urgency = remaining <= 10 ? 'danger' : remaining <= 30 ? 'warn' : '';
-    timerHtml = `<span class="badge timer ${urgency}">残り ${formatLiveTime(remaining)}</span>`;
+    if (appState.challengeGracePeriodActive) {
+      timerHtml = '<span class="badge timer danger">最終問題</span>';
+    } else {
+      const remaining = getChallengeRemainingSeconds();
+      const urgency = remaining <= 10 ? 'danger' : remaining <= 30 ? 'warn' : '';
+      timerHtml = `<span class="badge timer ${urgency}">残り ${formatLiveTime(remaining)}</span>`;
+    }
   } else if (appState.mode === 'time-attack' || appState.mode === 'three-questions') {
     timerHtml = `<span class="badge timer">${formatLiveTime(appState.timer.getElapsedSeconds())}</span>`;
   } else {
@@ -1157,8 +1166,7 @@ function renderResult() {
       <p class="small">${info.titleInfo.text}</p>
       <div class="list">
         <div>クリア数　　　　${stats.clearCount}問</div>
-        <div>ノーミスクリア　${stats.noMistakeClears}問</div>
-        <div>最高連続正解　　${stats.bestNoMistakeStreak}問</div>
+        <div>連続ノーミス　　${stats.bestNoMistakeStreak}問</div>
       </div>
       ${extraMessages.join('')}
       <div class="row">
