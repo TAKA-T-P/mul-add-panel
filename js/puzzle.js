@@ -97,22 +97,3 @@ function checkSolution(values, puzzle, mode) {
     && cols.every((value, index) => value === puzzle.columnSums[index]);
   return { valid, rows, cols, reason: valid ? 'ok' : 'mismatch' };
 }
-
-// Builds the "9x1x7=63 v" style text used in the correct-answer reveal.
-function buildRevealTexts(values, puzzle, mode) {
-  const board = getBoardDefinition(mode);
-  const rowsText = [];
-  for (let row = 0; row < board.rows; row += 1) {
-    const rowValues = values.slice(row * board.cols, row * board.cols + board.cols);
-    rowsText.push(`${rowValues.join('×')}＝${puzzle.rowProducts[row]}`);
-  }
-  const colsText = [];
-  for (let col = 0; col < board.cols; col += 1) {
-    const colValues = [];
-    for (let row = 0; row < board.rows; row += 1) {
-      colValues.push(values[row * board.cols + col]);
-    }
-    colsText.push(`${colValues.join('＋')}＝${puzzle.columnSums[col]}`);
-  }
-  return { rowsText, colsText };
-}

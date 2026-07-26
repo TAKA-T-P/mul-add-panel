@@ -23,7 +23,8 @@ const CHALLENGE_TITLES = [
   { min: 4, max: 4, title: 'ナンバーハンター', text: '4問クリアはすごい！数字の組合せを見つける力が鋭い！' },
   { min: 5, max: 5, title: 'ロジックマスター', text: '固定マス1個の問題に到達！見事な計算力と推理力！' },
   { min: 6, max: 6, title: 'ナンバーエース', text: '6問突破！速さと正確さの両方がすばらしい！' },
-  { min: 7, max: Infinity, title: 'パズルレジェンド', text: '驚異の記録！数字の迷宮を完全に攻略したね！' },
+  { min: 7, max: 7, title: 'パズルレジェンド', text: '驚異の記録！数字の迷宮を完全に攻略したね！' },
+  { min: 8, max: Infinity, title: 'かけ×たし+グランドマスター', text: '計算力・推理力・スピード、すべてが最高レベル！' },
 ];
 
 // 1問あたりの基準時間(ms)。3問モードは合計を3で割った平均をこの基準と比べる。
@@ -91,13 +92,15 @@ const appState = {
   challengeLastBeepSecond: null,
   threeQuestionProgress: 0,
   threeQuestionTimes: [],
+  resultBoards: [],
+  showResultHistory: false,
   challengeStats: { clearCount: 0, correctCells: 0, noMistakeClears: 0, noMistakeStreak: 0, bestNoMistakeStreak: 0 },
   resultPreviousBest: null,
   resultElapsed: 0,
   isNewRecord: false,
   resultEvaluation: null,
   resultChallenge: null,
-  reveal: null,
+  showCorrectMark: false,
   records: readRecords(),
   settings: readSettings(),
   boardShake: false,
@@ -209,6 +212,7 @@ function handleClick(event) {
     case 'next-puzzle': startGame(); break;
     case 'play-again': if (appState.mode === 'challenge') startChallenge(); else startGame(); break;
     case 'title-again': clearIntervalsOnly(); appState.screen = 'title'; break;
+    case 'toggle-result-history': appState.showResultHistory = !appState.showResultHistory; break;
     case 'toggle-sound': appState.settings.sound = !appState.settings.sound; saveSettings(appState.settings); break;
     case 'set-chip-color': appState.settings.chipColor = actionEl.dataset.color; saveSettings(appState.settings); break;
     case 'reset-records': if (confirm('これまでの記録をすべて消しますか？')) { appState.records = resetRecords(); } break;
@@ -441,7 +445,8 @@ function getChallengeFixedCount(questionNumber) {
   if (questionNumber === 2) return 4;
   if (questionNumber === 3) return 3;
   if (questionNumber === 4) return 2;
-  return 1;
+  if (questionNumber <= 7) return 1;
+  return 0;
 }
 
 function getNextPuzzle(sizeOverride = null) {
@@ -583,6 +588,8 @@ function startGame() {
   appState.boardShake = false;
   appState.lastRecordMessage = '';
   appState.timer.reset();
+  appState.resultBoards = [];
+  appState.showResultHistory = false;
   if (appState.mode === 'three-questions') {
     appState.threeQuestionProgress = 0;
     appState.threeQuestionTimes = [];
@@ -653,26 +660,26 @@ function submitAnswer() {
 }
 
 function onCorrectAnswer() {
-  const boardModeKey = getCurrentBoardModeKey();
-  const snapshotValues = appState.boardValues.slice();
-  const snapshotPuzzle = appState.currentPuzzle;
   if (appState.mode === 'challenge') {
     appState.challengeCountdown.pause();
   } else {
     stopTimer();
   }
-  startReveal(snapshotValues, snapshotPuzzle, boardModeKey, finishCorrectFlow);
+  showCorrectMark(finishCorrectFlow);
 }
 
-function startReveal(values, puzzle, boardModeKey, onDoneCallback) {
-  const { rowsText, colsText } = buildRevealTexts(values, puzzle, boardModeKey);
+// The game screen stays put (board and all) while a big "○" pops up over
+// it for a beat - no more switching away to a separate reveal screen.
+function showCorrectMark(onDoneCallback) {
   const baseDurations = { leisure: 1800, 'time-attack': 2500, 'three-questions': 2500, challenge: 2500 };
   const duration = baseDurations[appState.mode] || 1000;
-  appState.reveal = { rowsText, colsText, duration };
-  appState.screen = 'reveal';
+  appState.showCorrectMark = true;
   playCorrectSound();
   render();
-  setTimeout(onDoneCallback, duration);
+  setTimeout(() => {
+    appState.showCorrectMark = false;
+    onDoneCallback();
+  }, duration);
 }
 
 function finishCorrectFlow() {
@@ -698,6 +705,11 @@ function finishCorrectFlow() {
       questionCount: 1,
       totalTimeMs: elapsed * 1000,
     });
+    appState.resultBoards = [{
+      puzzle: appState.currentPuzzle,
+      values: appState.boardValues.slice(),
+      fixedCells: appState.fixedCells.slice(),
+    }];
     stopUiTicker();
     appState.screen = 'result';
     render();
@@ -706,6 +718,11 @@ function finishCorrectFlow() {
 
   if (appState.mode === 'three-questions') {
     appState.threeQuestionTimes.push(appState.timer.getElapsedSeconds());
+    appState.resultBoards.push({
+      puzzle: appState.currentPuzzle,
+      values: appState.boardValues.slice(),
+      fixedCells: appState.fixedCells.slice(),
+    });
     appState.threeQuestionProgress += 1;
     if (appState.threeQuestionProgress < 3) {
       appState.message = '';
@@ -829,6 +846,7 @@ function finishChallenge() {
     isNewRecord: newBest,
     allNoMistake: stats.clearCount > 0 && stats.noMistakeClears === stats.clearCount,
     reachedFixedOne: stats.clearCount >= 5,
+    reachedFixedZero: stats.clearCount >= 8,
     isFirstEver,
   };
   playChallengeResultFanfare();
@@ -965,7 +983,6 @@ function render() {
     case 'countdown': renderCountdown(); break;
     case 'time-up': renderTimeUp(); break;
     case 'game': renderGame(); break;
-    case 'reveal': renderReveal(); break;
     case 'result': renderResult(); break;
     default: renderTitle(); break;
   }
@@ -1182,19 +1199,7 @@ function renderGame() {
       </div>
       <p class="mode-label">${getBoardSize(boardModeKey) === '3x2' ? 'イージー 3×2' : 'スタンダード 3×3'}　${header}</p>
       <div class="message">${formatMessage(appState.message)}</div>
-    </div>`;
-}
-
-function renderReveal() {
-  const reveal = appState.reveal;
-  const items = [...reveal.rowsText, ...reveal.colsText];
-  const step = reveal.duration / (items.length + 1);
-  appEl.innerHTML = `
-    <div class="card reveal-card">
-      <h2>正解！</h2>
-      <div class="reveal-list">
-        ${items.map((text, index) => `<div class="reveal-item" style="animation-delay:${Math.round(index * step)}ms">${text}　✓</div>`).join('')}
-      </div>
+      ${appState.showCorrectMark ? '<div class="correct-mark-overlay"><div class="correct-mark">○</div></div>' : ''}
     </div>`;
 }
 
@@ -1210,6 +1215,11 @@ const RANK_TIER_CLASS = {
   F: 'rank-tier-calm',
 };
 
+// A single labelled stat tile used across the time-attack result screens.
+function renderStatItem(label, value, extraClass = '') {
+  return `<div class="stat-item ${extraClass}"><span class="stat-label">${label}</span><span class="stat-value">${value}</span></div>`;
+}
+
 // Shared by the 1問 and 3問 time-attack result screens so the rank/title/
 // comment markup isn't duplicated between them.
 function renderEvaluationBlock(evaluation) {
@@ -1217,10 +1227,34 @@ function renderEvaluationBlock(evaluation) {
   const tierClass = RANK_TIER_CLASS[evaluation.rank] || '';
   return `
     <div class="rank-block ${tierClass}">
-      <p class="rank-badge">評価 ${evaluation.rank}</p>
+      <p class="rank-badge">ランク ${evaluation.rank}</p>
       <p class="rank-title">${evaluation.title}</p>
       <p class="rank-comment">${evaluation.comment}</p>
     </div>`;
+}
+
+// Shows the completed board(s) for the time-attack/three-questions result
+// screen once "りれき" is toggled on - one diagram for 1問, three (each
+// labelled) for 3問, reusing the same board-grid renderer as everywhere else.
+function renderResultBoardHistory() {
+  if (!appState.showResultHistory || appState.resultBoards.length === 0) return '';
+  const board = getBoardDefinition(appState.puzzleSize);
+  return appState.resultBoards.map((entry, index) => {
+    const label = appState.resultBoards.length > 1 ? `<p class="small result-board-label">第${index + 1}問</p>` : '';
+    const grid = renderBoardGrid(
+      board.cols,
+      board.rows,
+      entry.puzzle.columnSums,
+      entry.puzzle.rowProducts,
+      entry.values.map((value, i) => {
+        const row = Math.floor(i / board.cols);
+        const col = i % board.cols;
+        const fixed = entry.fixedCells.includes(i);
+        return `<div class="board-cell occupied ${fixed ? 'fixed' : ''}" style="grid-column: ${col + 3}; grid-row: ${row + 3};"><span class="cell-value">${value}</span></div>`;
+      }).join(''),
+    );
+    return `<div class="result-board-entry">${label}${grid}</div>`;
+  }).join('');
 }
 
 function renderResult() {
@@ -1255,48 +1289,62 @@ function renderResult() {
     const best = appState.resultPreviousBest;
     inner = `
       <h2>1問クリア！</h2>
-      <div class="list">
-        <div>クリアタイム　${formatResultTime(appState.resultElapsed)}</div>
-        <div>自己ベスト　　${best === null || best === undefined ? '初挑戦' : formatResultTime(best)}</div>
-      </div>
       ${renderEvaluationBlock(appState.resultEvaluation)}
+      <div class="stat-grid stat-grid-2">
+        ${renderStatItem('クリアタイム', formatResultTime(appState.resultElapsed))}
+        ${renderStatItem('ベストタイム', best === null || best === undefined ? '初挑戦' : formatResultTime(best))}
+      </div>
       ${appState.isNewRecord ? '<p class="record-badge">自己ベスト更新！</p>' : ''}
       <div class="row">
         <button class="primary-btn" data-action="play-again">もう1回</button>
         <button class="ghost-btn" data-action="title-again">タイトルへ</button>
-      </div>`;
+        <button class="ghost-btn" data-action="toggle-result-history">りれき</button>
+      </div>
+      ${renderResultBoardHistory()}`;
   } else if (appState.mode === 'three-questions') {
     const best = appState.resultPreviousBest;
-    const questionLines = appState.threeQuestionTimes.map((time, index) => `<div>第${index + 1}問　${formatResultTime(time)}</div>`).join('');
     const averageSeconds = appState.resultElapsed / 3;
+    const questionItems = appState.threeQuestionTimes.map((time, index) => renderStatItem(`第${index + 1}問`, formatResultTime(time))).join('');
     inner = `
       <h2>3問クリア！</h2>
-      <div class="list">
-        <div>合計タイム　${formatResultTime(appState.resultElapsed)}</div>
-        <div class="small">1問平均　${formatResultTime(averageSeconds)}</div>
-        ${questionLines}
-        <div>自己ベスト　${best === null || best === undefined ? '初挑戦' : formatResultTime(best)}</div>
-      </div>
       ${renderEvaluationBlock(appState.resultEvaluation)}
+      <div class="stat-grid stat-grid-3">
+        ${renderStatItem('1問平均', formatResultTime(averageSeconds))}
+        ${renderStatItem('合計タイム', formatResultTime(appState.resultElapsed), 'stat-item-emphasis')}
+        ${renderStatItem('ベストタイム', best === null || best === undefined ? '初挑戦' : formatResultTime(best))}
+        ${questionItems}
+      </div>
       ${appState.isNewRecord ? '<p class="record-badge">自己ベスト更新！</p>' : ''}
       <div class="row">
         <button class="primary-btn" data-action="play-again">もう1回</button>
         <button class="ghost-btn" data-action="title-again">タイトルへ</button>
-      </div>`;
+        <button class="ghost-btn" data-action="toggle-result-history">りれき</button>
+      </div>
+      ${renderResultBoardHistory()}`;
   } else if (appState.mode === 'challenge') {
     const stats = appState.challengeStats;
     const info = appState.resultChallenge;
     const extraMessages = [];
     if (info.isNewRecord) extraMessages.push('<p class="record-badge">自己ベスト更新！<br>前の自分を超えたぞ！</p>');
     if (info.allNoMistake) extraMessages.push('<p class="record-badge">パーフェクト思考！<br>一度も間違えずに答えを導けたね！</p>');
-    if (info.reachedFixedOne) extraMessages.push('<p class="record-badge">完全推理成功！<br>たった1つの手掛かりから答えを完成させた！</p>');
+    if (info.reachedFixedZero) {
+      extraMessages.push('<p class="record-badge">完全推理成功！<br>積と和だけを手掛かりに、すべての数字を見抜いた！</p>');
+    } else if (info.reachedFixedOne) {
+      extraMessages.push('<p class="record-badge">固定マス1個で正解！<br>少ない手掛かりから答えを完成させた！</p>');
+    }
     if (info.isFirstEver) extraMessages.push('<p class="record-badge">初チャレンジ完了！<br>まずは最後まで挑戦したことがすばらしい！</p>');
+    let challengeTierClass = '';
+    if (stats.clearCount >= 8) challengeTierClass = 'rank-tier-max';
+    else if (stats.clearCount >= 6) challengeTierClass = 'rank-tier-high';
     inner = `
-      <h2>${info.titleInfo.title}</h2>
-      <p class="small">${info.titleInfo.text}</p>
-      <div class="list">
-        <div>クリア数　　　　${stats.clearCount}問</div>
-        <div>連続ノーミス　　${stats.bestNoMistakeStreak}問</div>
+      <h2>3分チャレンジ終了！</h2>
+      <div class="rank-block ${challengeTierClass}">
+        <p class="rank-title">${info.titleInfo.title}</p>
+        <p class="rank-comment">${info.titleInfo.text}</p>
+      </div>
+      <div class="stat-grid stat-grid-2">
+        ${renderStatItem('クリア数', `${stats.clearCount}問`)}
+        ${renderStatItem('連続ノーミス', `${stats.bestNoMistakeStreak}問`)}
       </div>
       ${extraMessages.join('')}
       <div class="row">
