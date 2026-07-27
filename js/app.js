@@ -10,8 +10,8 @@ const MODE_LABELS = {
 const MISSION_INFO = {
   threeLeft: { label: 'あと3マス', description: '超おてがる！残り3枚を正しい場所に入れよう！' },
   fixTheSwap: { label: 'まちがいを直せ', description: '2枚の数字が入れかわっているよ。正しく直そう！' },
-  hiddenHint: { label: 'かくされたヒント', description: '盤面を完成させて、「？」に入る数も求めよう！' },
-  moveLimit: { label: '移動回数チャレンジ', description: '決められた回数以内に、入れ替えだけで完成させよう！' },
+  hiddenHint: { label: 'かくされたヒント', description: 'かくされた数字を推理して、全部のマスをうめよう！' },
+  moveLimit: { label: '手数リミット', description: '決められた回数以内に、入れ替えだけで完成させよう！' },
 };
 
 const CHIP_COLORS = [
@@ -133,7 +133,6 @@ const appState = {
   selectedCellIndex: null,
   message: '',
   hintCount: 0,
-  wrongAnswerCount: 0,
   timer: new PuzzleTimer(),
   countdown: null,
   countdownTimer: null,
@@ -164,13 +163,15 @@ const appState = {
   resultEvaluation: null,
   resultChallenge: null,
   resultSmartClear: null,
+  resultStarTier: null,
   missionType: null,
   missionInitialValues: [],
   missionMistakeRows: [],
   missionMistakeCols: [],
   missionHintUsed: false,
   missionHintKind: null,
-  missionHiddenHint: null,
+  missionHiddenPair: null,
+  missionHiddenRowRevealed: false,
   missionMoveCount: 0,
   missionMinSwaps: 0,
   missionAllowedMoves: 0,
@@ -259,9 +260,13 @@ function handleClick(event) {
   const actionEl = event.target.closest('[data-action]');
   if (!actionEl) return;
   const action = actionEl.dataset.action;
-  if (action === 'select-cell' || action === 'number') {
-    playTapSound();
-  } else {
+  if (action === 'number') {
+    playPanelSelectSound();
+  } else if (action !== 'select-cell') {
+    // select-cell plays its own sound inside handleCellTap(), since which
+    // tone fits depends on which of its several sub-cases actually happens
+    // (picking a placed number back up sounds different from placing/
+    // swapping one into a cell).
     playClickSound();
   }
   switch (action) {
@@ -275,8 +280,16 @@ function handleClick(event) {
     case 'play-style': appState.mode = actionEl.dataset.mode; startGame(); break;
     case 'back':
       clearIntervalsOnly();
-      if (appState.screen === 'play-style') appState.screen = 'title';
-      else appState.screen = 'title';
+      if (appState.screen === 'game') {
+        // From the game screen, go back one step to whichever selection
+        // screen led here - not all the way to the title - since 3分チャレンジ
+        // has no intermediate selection screen, it falls back to the title.
+        if (appState.mode === 'mission') appState.screen = 'mission-select';
+        else if (appState.mode === 'leisure' || appState.mode === 'time-attack' || appState.mode === 'three-questions') appState.screen = 'play-style';
+        else appState.screen = 'title';
+      } else {
+        appState.screen = 'title';
+      }
       break;
     case 'select-cell': { const cellIndex = Number(actionEl.dataset.index); handleCellTap(cellIndex); break; }
     case 'number': { const value = Number(actionEl.dataset.value); handleNumberTap(value); break; }
@@ -400,6 +413,7 @@ function handleCellTap(index) {
       // Tapping the already-selected cell again sends its number back to the
       // panel, instead of just cancelling the selection - except in the
       // no-panel missions, which have nowhere for it to go back to.
+      playTapSound();
       if (!isNoPanelMission()) {
         appState.boardValues[index] = null;
         appState.smartClear.hasExtraMove = true;
@@ -409,6 +423,7 @@ function handleCellTap(index) {
       render();
       return;
     }
+    playTapSound();
     const swapped = swapCells(appState.selectedCellIndex, index);
     appState.selectedCellIndex = null;
     appState.selectedValue = null;
@@ -417,10 +432,15 @@ function handleCellTap(index) {
     return;
   }
   if (appState.selectedValue !== null) {
+    playTapSound();
     placeValue(index, appState.selectedValue);
     return;
   }
   if (cellValue !== null) {
+    // Picking an already-placed number back up (not a swap) sounds like
+    // selecting from the panel, since it's the same kind of action - marking
+    // a number as "held" rather than moving one into place.
+    playPanelSelectSound();
     appState.selectedCellIndex = index;
     appState.selectedValue = null;
     appState.message = '';
@@ -438,7 +458,7 @@ function handleNumberTap(value) {
 }
 
 // Returns whether the swap actually happened (false if refused, e.g. a
-// fixed-cell target or an exhausted 移動回数チャレンジ move budget) so callers
+// fixed-cell target or an exhausted 手数リミット move budget) so callers
 // know whether it's safe to clear appState.message.
 function swapCells(fromIndex, toIndex) {
   if (appState.fixedCells.includes(fromIndex) || appState.fixedCells.includes(toIndex)) return false;
@@ -479,6 +499,7 @@ function placeValue(index, value) {
   } else {
     appState.smartClear.fillCount += 1;
   }
+  if (appState.mode === 'mission') appState.missionMoveCount += 1;
   appState.boardValues[index] = value;
   appState.selectedValue = null;
   appState.message = '';
@@ -487,7 +508,7 @@ function placeValue(index, value) {
 
 function resetBoard() {
   if (isNoPanelMission()) {
-    // まちがいを直せ / 移動回数チャレンジ: there's no "answer minus fixed cells"
+    // まちがいを直せ / 手数リミット: there's no "answer minus fixed cells"
     // to fall back on - restore the exact initial (wrong/shuffled) layout.
     appState.boardValues = appState.missionInitialValues.slice();
     appState.missionMoveCount = 0;
@@ -500,7 +521,6 @@ function resetBoard() {
   appState.selectedValue = null;
   appState.selectedCellIndex = null;
   appState.hintCount = 0;
-  appState.wrongAnswerCount = 0;
   appState.message = '';
   appState.wrongRowIndices = [];
   appState.wrongColIndices = [];
@@ -620,15 +640,53 @@ function getChallengeTitle(clearCount) {
   return CHALLENGE_TITLES.find((entry) => clearCount >= entry.min && clearCount <= entry.max) || CHALLENGE_TITLES[0];
 }
 
-// A mistake counts the same as one hint toward knocking a star off: no
-// hints and no wrong submissions is the only way to reach 3 stars, one
-// hint (or any mistakes with none) drops to 2, and anything beyond that
-// bottoms out at 1.
-function getHintStars(hintCount, wrongAnswerCount) {
-  const penalty = hintCount + (wrongAnswerCount > 0 ? 1 : 0);
-  if (penalty <= 0) return '★★★';
-  if (penalty === 1) return '★★☆';
-  return '★☆☆';
+// --- Star rating (じっくり + all 4 missions) ---
+//
+// Every mode's star rating starts from a mode-specific "base tier" (3/2/1,
+// see computeMissionBaseTier() for missions; じっくり's base is always 3) and
+// then the same two penalties apply everywhere: using a hint costs 1 tier,
+// and having gotten a wrong answer and/or pressed reset at any point during
+// the attempt costs another 1 tier - no matter how many times either
+// happened, each category only ever costs 1 tier, and the result never
+// drops below ★☆☆.
+const STAR_STRINGS = { 1: '★☆☆', 2: '★★☆', 3: '★★★' };
+
+function computeStarTier(baseTier) {
+  const sc = appState.smartClear;
+  let tier = baseTier;
+  if (sc.hintUsed) tier -= 1;
+  if (sc.wrongSubmitted || sc.resetUsed) tier -= 1;
+  return Math.max(1, Math.min(3, tier));
+}
+
+// The base tier (before the hint/mistake penalties above) for each mission,
+// judged purely on how efficiently the puzzle itself was solved.
+function computeMissionBaseTier() {
+  if (appState.missionType === 'threeLeft') {
+    if (appState.missionMoveCount === 3 && appState.resultElapsed <= 7) return 3;
+    if (appState.missionMoveCount === 3) return 2;
+    return 1;
+  }
+  if (appState.missionType === 'fixTheSwap') {
+    return appState.missionMoveCount === 1 ? 3 : 2;
+  }
+  if (appState.missionType === 'moveLimit') {
+    return appState.missionMoveCount === appState.missionMinSwaps ? 3 : 2;
+  }
+  // かくされたヒント has no move/time criterion - reaching the result screen
+  // at all means it was solved, so it starts at the top tier.
+  return 3;
+}
+
+// Adds this clear's star tier to the cumulative per-mode total shown on the
+// records screen and persists it immediately.
+function recordStars(category, tier) {
+  appState.records.stars[category] = (appState.records.stars[category] || 0) + tier;
+  saveRecords(appState.records);
+}
+
+function getLeisureStarCategory() {
+  return appState.puzzleSize === 'easy' ? 'leisureEasy' : 'leisureStandard';
 }
 
 // --- Timers ---
@@ -698,9 +756,9 @@ function updateLiveTimerBadge() {
 }
 
 function startCountdown(onComplete) {
-  // じっくり has no clock to race against, so it skips straight to "START!"
-  // instead of ticking through 3, 2, 1.
-  const countdownValues = appState.mode === 'leisure' ? ['START!'] : ['3', '2', '1', 'START!'];
+  // じっくり and ミッションには時計と競う要素がないので、3,2,1 を省き
+  // 「START!」のみ表示する。
+  const countdownValues = (appState.mode === 'leisure' || appState.mode === 'mission') ? ['START!'] : ['3', '2', '1', 'START!'];
   const playBeatSound = (index) => {
     if (index === countdownValues.length - 1) playCountdownGoSound(); else playCountdownTickSound();
   };
@@ -732,7 +790,6 @@ function startGame() {
   clearIntervalsOnly();
   appState.message = '';
   appState.hintCount = 0;
-  appState.wrongAnswerCount = 0;
   appState.boardShake = false;
   appState.lastRecordMessage = '';
   appState.timer.reset();
@@ -814,16 +871,16 @@ function startMission(missionType) {
   appState.message = '';
   appState.boardShake = false;
   appState.hintCount = 0;
-  appState.wrongAnswerCount = 0;
   appState.showPuzzleKey = false;
   appState.missionHintUsed = false;
   appState.missionHintKind = null;
+  appState.missionHiddenRowRevealed = false;
   appState.missionMistakeRows = [];
   appState.missionMistakeCols = [];
   appState.missionMoveCount = 0;
   appState.missionMinSwaps = 0;
   appState.missionAllowedMoves = 0;
-  appState.missionHiddenHint = null;
+  appState.missionHiddenPair = null;
   appState.resultMissionText = null;
   resetSmartClearTracking();
 
@@ -840,14 +897,14 @@ function startMission(missionType) {
     appState.missionMistakeCols = setup.mistakeCols;
     appState.missionHintKind = Math.random() < 0.5 ? 'row' : 'col';
   } else if (missionType === 'hiddenHint') {
-    // かくされたヒント needs a puzzle whose hiddenHintCandidates isn't empty.
+    // かくされたヒント needs a puzzle whose hiddenHintPairs isn't empty.
     let attempts = 0;
-    while ((!puzzle.hiddenHintCandidates || puzzle.hiddenHintCandidates.length === 0) && attempts < 30) {
+    while ((!puzzle.hiddenHintPairs || puzzle.hiddenHintPairs.length === 0) && attempts < 30) {
       puzzle = getNextPuzzle('standard');
       attempts += 1;
     }
-    const candidates = puzzle.hiddenHintCandidates || [];
-    appState.missionHiddenHint = candidates[Math.floor(Math.random() * candidates.length)] || null;
+    const pairs = puzzle.hiddenHintPairs || [];
+    appState.missionHiddenPair = pairs[Math.floor(Math.random() * pairs.length)] || null;
     puzzleState = { values: Array(9).fill(null), fixed: [] };
   } else {
     const setup = createMissionMoveLimitState(puzzle);
@@ -860,50 +917,44 @@ function startMission(missionType) {
   applyPuzzleState(puzzleState);
   startCountdown(() => {
     appState.screen = 'game';
+    // あと3マス's ★★★ tier needs a (never displayed) elapsed-time check - see
+    // computeMissionBaseTier(). No other mission times itself.
+    if (missionType === 'threeLeft') {
+      appState.timer.reset();
+      appState.timer.start();
+    }
   });
 }
 
-// まちがいを直せ's single hint: reveals only which one row-or-column is
-// mismatched (chosen once at mission start), never the exact cells.
+// Each mission with a hint gets exactly one use, spent differently depending
+// on the mission: まちがいを直せ reveals only which one row-or-column is
+// mismatched (never the exact cells); かくされたヒント reveals the hidden
+// row-product's actual number (the hidden column-sum stays hidden).
 function useMissionHint() {
-  if (appState.mode !== 'mission' || appState.missionType !== 'fixTheSwap' || appState.missionHintUsed) return;
-  appState.missionHintUsed = true;
-  appState.smartClear.hintUsed = true;
-  if (appState.missionHintKind === 'row') {
-    const row = appState.missionMistakeRows[0];
-    appState.message = `${ROW_POSITION_WORDS[row]}の横一列を確認してみよう！`;
-  } else {
-    const col = appState.missionMistakeCols[0];
-    appState.message = `${COL_POSITION_WORDS[col]}の縦一列に注目してみよう！`;
+  if (appState.mode !== 'mission' || appState.missionHintUsed) return;
+  if (appState.missionType === 'fixTheSwap') {
+    appState.missionHintUsed = true;
+    appState.smartClear.hintUsed = true;
+    if (appState.missionHintKind === 'row') {
+      const [r1, r2] = appState.missionMistakeRows;
+      appState.message = `${ROW_POSITION_WORDS[r1]}の横一列と${ROW_POSITION_WORDS[r2]}の横一列の積が正しくないよ。`;
+    } else {
+      const [c1, c2] = appState.missionMistakeCols;
+      appState.message = `${COL_POSITION_WORDS[c1]}の縦一列と${COL_POSITION_WORDS[c2]}の縦一列の和が正しくないよ。`;
+    }
+    render();
+  } else if (appState.missionType === 'hiddenHint') {
+    appState.missionHintUsed = true;
+    appState.smartClear.hintUsed = true;
+    appState.missionHiddenRowRevealed = true;
+    render();
   }
-  render();
 }
 
 function submitAnswer() {
-  if (appState.mode === 'mission' && appState.missionType === 'hiddenHint') {
-    submitHiddenHintAnswer();
-    return;
-  }
   const boardModeKey = getCurrentBoardModeKey();
   const result = checkSolution(appState.boardValues, appState.currentPuzzle, boardModeKey);
   if (result.valid) {
-    onCorrectAnswer();
-  } else {
-    onWrongAnswer(result);
-  }
-}
-
-// かくされたヒント requires both the board AND the typed "?" value to be
-// correct at once. The input isn't tracked in appState (no render() happens
-// while typing, so its DOM value persists fine) - it's only read here, at
-// the moment of submission.
-function submitHiddenHintAnswer() {
-  const result = checkSolution(appState.boardValues, appState.currentPuzzle, 'standard');
-  const inputEl = document.getElementById('hidden-hint-value');
-  const typed = inputEl ? Number(inputEl.value) : NaN;
-  const hidden = appState.missionHiddenHint;
-  const numberCorrect = hidden && typed === hidden.value;
-  if (result.valid && numberCorrect) {
     onCorrectAnswer();
   } else {
     onWrongAnswer(result);
@@ -980,6 +1031,8 @@ function showCorrectMark(onDoneCallback) {
 function finishCorrectFlow() {
   if (appState.mode === 'leisure') {
     appState.resultSmartClear = appState.lastSmartClearTier;
+    appState.resultStarTier = computeStarTier(3);
+    recordStars(getLeisureStarCategory(), appState.resultStarTier);
     appState.screen = 'result';
     render();
     return;
@@ -1077,6 +1130,9 @@ function finishCorrectFlow() {
   }
 
   if (appState.mode === 'mission') {
+    if (appState.missionType === 'threeLeft') appState.resultElapsed = appState.timer.getElapsedSeconds();
+    appState.resultStarTier = computeStarTier(computeMissionBaseTier());
+    recordStars(appState.missionType, appState.resultStarTier);
     appState.resultMissionText = evaluateMissionResult();
     appState.screen = 'result';
     render();
@@ -1085,34 +1141,18 @@ function finishCorrectFlow() {
 
 // Each mission has its own single evaluation line (or none, for a plain
 // clear) instead of the 4-tier smart-clear system used elsewhere.
+// Star ratings (see computeMissionBaseTier()/computeStarTier()) now carry
+// the per-performance evaluation for every mission; the only mission with
+// its own extra callout text is あと3マス's speed bonus, independent of the
+// move-count that the star tier itself is judged on.
 function evaluateMissionResult() {
-  const sc = appState.smartClear;
-  const firstTryClean = !sc.wrongSubmitted;
-  if (appState.missionType === 'threeLeft') {
-    return (firstTryClean && !sc.hasExtraMove)
-      ? 'パーフェクト完成！\n残り3枚の場所を一度で見抜いたね！'
-      : null;
-  }
-  if (appState.missionType === 'fixTheSwap') {
-    return (firstTryClean && appState.missionMoveCount === 1)
-      ? '一発修正！\n入れかわった2枚をすぐに見抜いたね！'
-      : null;
-  }
-  if (appState.missionType === 'hiddenHint') {
-    return firstTryClean
-      ? '完全計算！\n盤面も隠れたヒントも、一度で正しく求められたね！'
-      : null;
-  }
-  if (appState.missionType === 'moveLimit') {
-    if (appState.missionMoveCount === appState.missionMinSwaps) {
-      return '最短ルート！\nむだのない入れ替えで、見事に完成させたね！';
-    }
-    return '計画的クリア！\n先を考えながら、決められた回数で完成できたね！';
+  if (appState.missionType === 'threeLeft' && appState.resultElapsed <= 7) {
+    return 'スピード解答！\nあっという間に正解したね！';
   }
   return null;
 }
 
-// この問題のカギ text for the 3 missions that have one (not 移動回数チャレンジ).
+// この問題のカギ text for the 3 missions that have one (not 手数リミット).
 function buildCurrentMissionKey() {
   if (appState.missionType === 'threeLeft') {
     const emptyIndices = Array.from({ length: 9 }, (_, i) => i).filter((i) => !appState.initialFixedCells.includes(i));
@@ -1122,25 +1162,23 @@ function buildCurrentMissionKey() {
     return buildMissionFixTheSwapKey(appState.missionMistakeRows, appState.missionMistakeCols);
   }
   if (appState.missionType === 'hiddenHint') {
-    return buildMissionHiddenHintKey(appState.currentPuzzle, appState.missionHiddenHint);
+    return buildMissionHiddenHintKey(appState.currentPuzzle, appState.missionHiddenPair);
   }
   return null;
 }
 
 function onWrongAnswer(result) {
-  // かくされたヒント and まちがいを直せ must never reveal which part (board vs.
-  // hidden number; which row/column) is wrong - a generic message only, and
-  // no "×" mismatch highlighting (which would otherwise leak exactly that).
-  const suppressMismatchHighlight = appState.mode === 'mission'
-    && (appState.missionType === 'hiddenHint' || appState.missionType === 'fixTheSwap');
-  appState.message = appState.mode === 'mission' && appState.missionType === 'hiddenHint'
-    ? '盤面か「？」の数を、もう一度確認してみよう！'
-    : 'おしい！どこかがちがうよ。\nもう一度見直してみよう！';
+  // まちがいを直せ's paid 1-hint mechanic relies on the player not otherwise
+  // being able to see which row/column is off for free - suppress the "×"
+  // mismatch highlighting there. Every other mode (かくされたヒント included -
+  // it's now just a normal board with 2 clues hidden from view) gets the
+  // usual feedback.
+  const suppressMismatchHighlight = appState.mode === 'mission' && appState.missionType === 'fixTheSwap';
+  appState.message = 'おしい！どこかがちがうよ。\nもう一度見直してみよう！';
   if (appState.mode === 'challenge') {
     appState.challengeMistakeThisPuzzle = true;
     appState.challengeCombo = 0;
   }
-  if (appState.mode === 'leisure') appState.wrongAnswerCount += 1;
   appState.smartClear.wrongSubmitted = true;
   playWrongSound();
   appState.boardShake = true;
@@ -1266,9 +1304,16 @@ function playClickSound() {
   playTone(520, 70, 'triangle');
 }
 
-// Tapping a number chip or a board cell directly (no drag involved).
+// Placing or swapping a number into a cell.
 function playTapSound() {
-  playTone(760, 55, 'triangle');
+  playTone(880, 55, 'triangle');
+}
+
+// Selecting a number - either tapping a chip in the panel, or picking an
+// already-placed number back up (not swapping it) - pitched distinctly below
+// playTapSound() so "selecting" and "placing/swapping" sound different.
+function playPanelSelectSound() {
+  playTone(440, 55, 'triangle');
 }
 
 // Picking a number chip up to start a drag.
@@ -1360,7 +1405,7 @@ function renderTitle() {
     <div class="card screen-title translucent-card">
       <div class="hero">
         <div class="badge title-badge">思考力をきたえる計算ロジックゲーム</div>
-        <h1>かけ×たし+パネル</h1>
+        <h1>かけ×たし+パズル</h1>
         <p class="subtitle">積と和のヒントから表を完成させよう！</p>
       </div>
       <div class="button-grid">
@@ -1444,19 +1489,32 @@ function renderHowTo() {
 function renderRecords() {
   const records = appState.records;
   const fmt = (value) => (value === null || value === undefined ? '未記録' : formatResultTime(value));
-  const rows = [
-    ['イージー 1問', fmt(records.timeAttack.easy1)],
-    ['イージー 3問', fmt(records.timeAttack.easy3)],
-    ['スタンダード 1問', fmt(records.timeAttack.standard1)],
-    ['スタンダード 3問', fmt(records.timeAttack.standard3)],
-    ['3分チャレンジ<br>最高クリア数', `${records.threeMinute.bestClearCount}問`],
-    ['3分チャレンジ<br>最高連続ノーミス', `${records.threeMinute.bestStreak}問`],
+  const items = [
+    renderStatItem('イージー 1問', fmt(records.timeAttack.easy1)),
+    renderStatItem('イージー 3問', fmt(records.timeAttack.easy3)),
+    renderStatItem('スタンダード 1問', fmt(records.timeAttack.standard1)),
+    renderStatItem('スタンダード 3問', fmt(records.timeAttack.standard3)),
+    renderStatItem('3分チャレンジ<br>最高クリア数', `${records.threeMinute.bestClearCount}問`),
+    renderStatItem('3分チャレンジ<br>最高連続ノーミス', `${records.threeMinute.bestStreak}問`),
+  ];
+  const starIcon = '<span class="star-icon">★</span>';
+  const starItems = [
+    renderStatItem('じっくりイージー', `${starIcon}${records.stars.leisureEasy}`),
+    renderStatItem('じっくりスタンダード', `${starIcon}${records.stars.leisureStandard}`),
+    renderStatItem('あと3マス', `${starIcon}${records.stars.threeLeft}`),
+    renderStatItem('まちがいを直せ', `${starIcon}${records.stars.fixTheSwap}`),
+    renderStatItem('かくされたヒント', `${starIcon}${records.stars.hiddenHint}`),
+    renderStatItem('手数リミット', `${starIcon}${records.stars.moveLimit}`),
   ];
   appEl.innerHTML = `
     <div class="card">
       <nav class="topbar"><button class="back" data-action="back">← もどる</button><span class="mode-label">記録</span></nav>
-      <div class="table-list">
-        ${rows.map(([label, value]) => `<span class="record-label">${label}</span><span class="record-value">：${value}</span>`).join('')}
+      <div class="stat-grid stat-grid-2">
+        ${items.join('')}
+      </div>
+      <p class="small records-section-label">獲得★数</p>
+      <div class="stat-grid stat-grid-2">
+        ${starItems.join('')}
       </div>
       <button class="secondary-btn" data-action="reset-records">記録をリセット</button>
     </div>`;
@@ -1488,14 +1546,14 @@ function renderSettings() {
 // labels line up exactly with their column/row and that every inter-cell gap
 // (horizontal and vertical alike) is identical, since it is all one grid
 // rather than several independently-sized ones trying to visually coincide.
-function renderBoardGrid(cols, rows, columnSums, rowProducts, cellsHtml, wrongCols = [], wrongRows = []) {
+function renderBoardGrid(cols, rows, columnSums, rowProducts, cellsHtml, wrongCols = [], wrongRows = [], hiddenCols = [], hiddenRows = []) {
   const track = `clamp(48px, 16vw, 64px)`;
   return `
     <div class="board-grid" style="grid-template-columns: max-content max-content repeat(${cols}, ${track}); grid-template-rows: max-content max-content repeat(${rows}, ${track});">
       <div class="group-label col-group-label" style="grid-column: 3 / -1; grid-row: 1;">たての和</div>
-      ${columnSums.map((value, i) => `<div class="axis-label col-label ${wrongCols.includes(i) ? 'wrong' : ''}" style="grid-column: ${i + 3}; grid-row: 2;">${value}</div>`).join('')}
+      ${columnSums.map((value, i) => `<div class="axis-label col-label ${wrongCols.includes(i) ? 'wrong' : ''} ${hiddenCols.includes(i) ? 'hidden-mystery' : ''}" style="grid-column: ${i + 3}; grid-row: 2;">${value}</div>`).join('')}
       <div class="group-label row-group-label" style="grid-column: 1; grid-row: 3 / -1;">横の積</div>
-      ${rowProducts.map((value, i) => `<div class="axis-label row-label ${wrongRows.includes(i) ? 'wrong' : ''}" style="grid-column: 2; grid-row: ${i + 3};">${value}</div>`).join('')}
+      ${rowProducts.map((value, i) => `<div class="axis-label row-label ${wrongRows.includes(i) ? 'wrong' : ''} ${hiddenRows.includes(i) ? 'hidden-mystery' : ''}" style="grid-column: 2; grid-row: ${i + 3};">${value}</div>`).join('')}
       <div class="board-panel-bg" style="grid-column: 3 / -1; grid-row: 3 / -1;"></div>
       ${cellsHtml}
     </div>`;
@@ -1524,12 +1582,15 @@ function renderGame() {
   const isHiddenHintMission = isMission && appState.missionType === 'hiddenHint';
   let currentRows = appState.currentPuzzle.rowProducts;
   let currentCols = appState.currentPuzzle.columnSums;
-  if (isHiddenHintMission && appState.missionHiddenHint) {
-    const hidden = appState.missionHiddenHint;
-    if (hidden.type === 'rowProduct') {
-      currentRows = currentRows.map((value, index) => (index === hidden.index ? '？' : value));
-    } else {
-      currentCols = currentCols.map((value, index) => (index === hidden.index ? '？' : value));
+  let hiddenRowIndices = [];
+  let hiddenColIndices = [];
+  if (isHiddenHintMission && appState.missionHiddenPair) {
+    const pair = appState.missionHiddenPair;
+    hiddenColIndices = [pair.colIndex];
+    currentCols = currentCols.map((value, index) => (index === pair.colIndex ? '？' : value));
+    if (!appState.missionHiddenRowRevealed) {
+      hiddenRowIndices = [pair.rowIndex];
+      currentRows = currentRows.map((value, index) => (index === pair.rowIndex ? '？' : value));
     }
   }
   const numbers = boardModeKey === 'easy' ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -1565,17 +1626,11 @@ function renderGame() {
   let hintButton = '';
   if (appState.mode === 'leisure') {
     hintButton = `<button class="ghost-btn" data-action="hint" ${appState.hintCount >= 3 ? 'disabled' : ''}>ヒント${appState.hintCount > 0 ? `(${appState.hintCount}/3)` : ''}</button>`;
-  } else if (isMission && appState.missionType === 'fixTheSwap') {
+  } else if (isMission && (appState.missionType === 'fixTheSwap' || appState.missionType === 'hiddenHint')) {
     hintButton = `<button class="ghost-btn" data-action="toggle-mission-hint" ${appState.missionHintUsed ? 'disabled' : ''}>ヒント${appState.missionHintUsed ? '(使用済み)' : ''}</button>`;
   }
 
   const zoneFlash = appState.showCorrectMark && appState.correctMarkPhase === 'milestone' && appState.milestoneIsZone;
-
-  const hiddenHintInputHtml = isHiddenHintMission ? `
-      <div class="hidden-hint-input">
-        <label for="hidden-hint-value">「？」＝</label>
-        <input type="number" inputmode="numeric" id="hidden-hint-value" class="hidden-hint-field" />
-      </div>` : '';
 
   appEl.innerHTML = `
     <div class="card game-card ${zoneFlash ? 'zone-flash' : ''}">
@@ -1592,8 +1647,7 @@ function renderGame() {
         return `<button class="board-cell ${fixed ? 'fixed' : ''} ${value !== null ? 'occupied' : ''} ${selected ? 'selected' : ''} ${appState.boardShake ? 'shake' : ''}" style="grid-column: ${col + 3}; grid-row: ${row + 3};" data-action="select-cell" data-index="${index}">
           <span class="cell-value">${value ?? ''}</span>
         </button>`;
-      }).join(''), appState.wrongColIndices, appState.wrongRowIndices)}
-      ${hiddenHintInputHtml}
+      }).join(''), appState.wrongColIndices, appState.wrongRowIndices, hiddenColIndices, hiddenRowIndices)}
       ${noPanel ? '' : `
       <div class="number-panel ${boardModeKey === 'easy' ? 'number-panel-grid3' : 'number-panel-grid5'}">
         ${numbers.map((number) => {
@@ -1721,10 +1775,11 @@ function renderResult() {
         return `<div class="board-cell occupied ${fixed ? 'fixed' : ''}" style="grid-column: ${col + 3}; grid-row: ${row + 3};"><span class="cell-value">${value}</span></div>`;
       }).join(''),
     );
+    const stars = STAR_STRINGS[appState.resultStarTier];
     inner = `
       <div class="result-title-row">
         <h2>正解！</h2>
-        <p class="star-rating">${getHintStars(appState.hintCount, appState.wrongAnswerCount)}</p>
+        <p class="star-rating ${stars === '★★★' ? 'star-rating-perfect' : ''}">${stars}</p>
       </div>
       <p class="small">よく考えたね！</p>
       ${renderSmartClearBlock(appState.resultSmartClear, false)}
@@ -1804,6 +1859,7 @@ function renderResult() {
       </div>`;
   } else if (appState.mode === 'mission') {
     const board = getBoardDefinition('standard');
+    const pair = appState.missionType === 'hiddenHint' ? appState.missionHiddenPair : null;
     const completedBoardHtml = renderBoardGrid(
       board.cols,
       board.rows,
@@ -1814,9 +1870,14 @@ function renderResult() {
         const col = index % board.cols;
         return `<div class="board-cell occupied" style="grid-column: ${col + 3}; grid-row: ${row + 3};"><span class="cell-value">${value}</span></div>`;
       }).join(''),
+      [], [],
+      pair ? [pair.colIndex] : [],
+      pair ? [pair.rowIndex] : [],
     );
+    const missionStars = STAR_STRINGS[appState.resultStarTier];
     inner = `
       <h2>${MISSION_INFO[appState.missionType].label}　クリア！</h2>
+      <p class="star-rating ${missionStars === '★★★' ? 'star-rating-perfect' : ''}">${missionStars}</p>
       ${appState.resultMissionText ? `<div class="smart-clear-block"><p class="smart-clear-comment">${formatMessage(appState.resultMissionText)}</p></div>` : ''}
       ${renderPuzzleKeyBlock(buildCurrentMissionKey())}
       <div class="row">

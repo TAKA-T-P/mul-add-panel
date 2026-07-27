@@ -6,6 +6,7 @@ function defaultRecords() {
     version: 1,
     timeAttack: { easy1: null, easy3: null, standard1: null, standard3: null },
     threeMinute: { bestClearCount: 0, bestCorrectCells: 0, bestStreak: 0, playCount: 0 },
+    stars: { leisureEasy: 0, leisureStandard: 0, threeLeft: 0, fixTheSwap: 0, hiddenHint: 0, moveLimit: 0 },
   };
 }
 
@@ -19,6 +20,7 @@ function readRecords() {
       version: 1,
       timeAttack: { ...fallback.timeAttack, ...(parsed.timeAttack || {}) },
       threeMinute: { ...fallback.threeMinute, ...(parsed.threeMinute || {}) },
+      stars: { ...fallback.stars, ...(parsed.stars || {}) },
     };
   } catch (error) {
     return defaultRecords();

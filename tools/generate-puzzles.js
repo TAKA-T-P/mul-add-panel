@@ -67,44 +67,41 @@ function scoreDifficulty(rowProducts, columnSums, numbers, rows, cols) {
   return branching;
 }
 
-// For each of the `rows + cols` hint slots, maps "the signature of the other
-// 5 hints" -> how many permutations of `numbers` share that signature. Used
-// to find, for a given puzzle, which single hint can be hidden while the
-// remaining 5 still pin down a unique solution (the かくされたヒント mission).
-// Built once per board size and reused across every candidate puzzle, since
-// it doesn't depend on which specific puzzle is being checked.
-function buildHiddenHintMaps(all, rows, cols) {
-  const numHints = rows + cols;
-  const maps = Array.from({ length: numHints }, () => new Map());
+// For each (rowIndex, colIndex) pair, maps "the signature of the other 4
+// hints" -> how many permutations of `numbers` share that signature. Used to
+// find, for a given puzzle, which one row-product AND one column-sum can be
+// hidden together while the remaining 4 hints still pin down a unique
+// solution (the かくされたヒント mission hides exactly one of each). Built
+// once per board size and reused across every candidate puzzle.
+function buildHiddenHintPairMaps(all, rows, cols) {
+  const maps = Array.from({ length: rows }, () => Array.from({ length: cols }, () => new Map()));
   all.forEach((arr) => {
     const { rowProducts, columnSums } = computeHints(arr, rows, cols);
-    const full = [...rowProducts, ...columnSums];
-    for (let slot = 0; slot < numHints; slot += 1) {
-      const key = full.filter((_, i) => i !== slot).join(',');
-      const map = maps[slot];
-      map.set(key, (map.get(key) || 0) + 1);
+    for (let r = 0; r < rows; r += 1) {
+      const restRows = rowProducts.filter((_, i) => i !== r);
+      for (let c = 0; c < cols; c += 1) {
+        const restCols = columnSums.filter((_, i) => i !== c);
+        const key = `${restRows.join(',')}|${restCols.join(',')}`;
+        const map = maps[r][c];
+        map.set(key, (map.get(key) || 0) + 1);
+      }
     }
   });
   return maps;
 }
 
-function computeHiddenHintCandidates(entry, maps, rows, cols) {
-  const full = [...entry.rowProducts, ...entry.columnSums];
-  const numHints = rows + cols;
-  const candidates = [];
-  for (let slot = 0; slot < numHints; slot += 1) {
-    const key = full.filter((_, i) => i !== slot).join(',');
-    const count = maps[slot].get(key) || 0;
-    if (count === 1) {
-      const isRow = slot < rows;
-      candidates.push({
-        type: isRow ? 'rowProduct' : 'columnSum',
-        index: isRow ? slot : slot - rows,
-        value: full[slot],
-      });
+function computeHiddenHintPairs(entry, maps, rows, cols) {
+  const pairs = [];
+  for (let r = 0; r < rows; r += 1) {
+    const restRows = entry.rowProducts.filter((_, i) => i !== r);
+    for (let c = 0; c < cols; c += 1) {
+      const restCols = entry.columnSums.filter((_, i) => i !== c);
+      const key = `${restRows.join(',')}|${restCols.join(',')}`;
+      const count = maps[r][c].get(key) || 0;
+      if (count === 1) pairs.push({ rowIndex: r, colIndex: c });
     }
   }
-  return candidates;
+  return pairs;
 }
 
 function shuffle(list) {
@@ -156,14 +153,14 @@ function buildPuzzles(sizeLabel, numbers, rows, cols, targetCount, withHiddenHin
   });
 
   const finalList = shuffle(selected).slice(0, Math.min(targetCount, selected.length));
-  const hiddenHintMaps = withHiddenHints ? buildHiddenHintMaps(all, rows, cols) : null;
+  const hiddenHintPairMaps = withHiddenHints ? buildHiddenHintPairMaps(all, rows, cols) : null;
   return finalList.map((entry, index) => ({
     id: `${sizeLabel}-${index + 1}`,
     answer: entry.answer,
     rowProducts: entry.rowProducts,
     columnSums: entry.columnSums,
     difficulty: entry.difficulty,
-    ...(withHiddenHints ? { hiddenHintCandidates: computeHiddenHintCandidates(entry, hiddenHintMaps, rows, cols) } : {}),
+    ...(withHiddenHints ? { hiddenHintPairs: computeHiddenHintPairs(entry, hiddenHintPairMaps, rows, cols) } : {}),
   }));
 }
 

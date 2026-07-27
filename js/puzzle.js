@@ -83,8 +83,10 @@ function findProductCombos(pool, target) {
 
 // Generates the "この問題のカギ" hint text shown after solving a puzzle
 // (じっくり and select missions only). Picks whichever row-product gives the
-// strongest starting foothold: one with only a single possible 3-digit
-// combination is named outright; failing that, the row with the fewest
+// strongest starting foothold: among rows with only a single possible 3-digit
+// combination, the one with the smallest product is named outright (a small
+// unique product is the easiest one for a player to spot themselves);
+// failing that (no row is uniquely determined), the row with the fewest
 // candidate combinations is pointed to instead. Never claims uniqueness
 // unless findProductCombos() actually confirms it. A generic column-sum tip
 // is always appended, since knowing which 3 numbers belong in a row still
@@ -94,10 +96,16 @@ function buildPuzzleKey(puzzle, boardType) {
   const rows = puzzle.rowProducts;
   const rowCombos = rows.map((product) => findProductCombos(digitPool, product));
   let insightText;
-  const uniqueIndex = rowCombos.findIndex((combos) => combos.length === 1);
-  if (uniqueIndex >= 0) {
-    const combo = rowCombos[uniqueIndex][0];
-    insightText = `積が${rows[uniqueIndex]}になるのは${combo.join('×')}。\nまず、この3枚が同じ横一列に入ると分かるよ！`;
+  const uniqueIndices = rowCombos.reduce((acc, combos, index) => {
+    if (combos.length === 1) acc.push(index);
+    return acc;
+  }, []);
+  if (uniqueIndices.length > 0) {
+    const bestIndex = uniqueIndices.reduce((best, index) => (
+      rows[index] < rows[best] ? index : best
+    ), uniqueIndices[0]);
+    const combo = rowCombos[bestIndex][0];
+    insightText = `積が${rows[bestIndex]}になるのは${combo.join('×')}。\nまず、この3枚が同じ横一列に入ると分かるよ！`;
   } else {
     const fewestIndex = rowCombos.reduce((best, combos, index) => (
       combos.length < rowCombos[best].length ? index : best
@@ -161,7 +169,7 @@ function createMissionFixTheSwapState(puzzle) {
   return { values, mistakeRows, mistakeCols };
 }
 
-// 移動回数チャレンジ: the answer with its 9 values shuffled across positions
+// 手数リミット: the answer with its 9 values shuffled across positions
 // so that sorting it back requires between 2 and 4 swaps (cycle-decomposition
 // minimum: cells - cycles). Puzzles outside that range are re-rolled so the
 // challenge stays tight but achievable.
@@ -198,7 +206,7 @@ function createMissionMoveLimitState(puzzle) {
   return { values, minSwaps };
 }
 
-// この問題のカギ text for the missions where it applies (not 移動回数チャレンジ).
+// この問題のカギ text for the missions where it applies (not 手数リミット).
 function buildMissionThreeLeftKey(puzzle, emptyIndices) {
   const missing = emptyIndices.map((index) => puzzle.answer[index]).sort((a, b) => a - b);
   return `残り3枚の数字は${missing.join('・')}。\n固定されていない3枚を確認しよう。横の積と縦の和の両方を使うと、3枚の場所を決められるよ！`;
@@ -213,17 +221,16 @@ function buildMissionFixTheSwapKey(mistakeRows, mistakeCols) {
   return `入れ替える前は、${rowText}・${colText}で数が合っていなかったよ。合わない行と列が交わる場所に注目するのがカギ！`;
 }
 
-function buildMissionHiddenHintKey(puzzle, hidden) {
+// かくされたヒント hides one rowProduct AND one columnSum at once (a pair);
+// the key explains both reveals in turn.
+function buildMissionHiddenHintKey(puzzle, pair) {
   const board = getBoardDefinition('standard');
-  if (hidden.type === 'rowProduct') {
-    const row = hidden.index;
-    const values = puzzle.answer.slice(row * board.cols, row * board.cols + board.cols);
-    return `「？」の横一列は${values.join('・')}。\n${values.join('×')}＝${hidden.value}だから、「？」は${hidden.value}だね！`;
-  }
-  const col = hidden.index;
-  const values = [];
-  for (let row = 0; row < board.rows; row += 1) values.push(puzzle.answer[row * board.cols + col]);
-  return `「？」の縦一列は${values.join('・')}。\n${values.join('+')}＝${hidden.value}だから、「？」は${hidden.value}だね！`;
+  const rowValues = puzzle.answer.slice(pair.rowIndex * board.cols, pair.rowIndex * board.cols + board.cols);
+  const rowProduct = puzzle.rowProducts[pair.rowIndex];
+  const colValues = [];
+  for (let row = 0; row < board.rows; row += 1) colValues.push(puzzle.answer[row * board.cols + pair.colIndex]);
+  const colSum = puzzle.columnSums[pair.colIndex];
+  return `横の「？」の列は${rowValues.join('・')}。\n${rowValues.join('×')}＝${rowProduct}だから、横の「？」は${rowProduct}だね！\nたての「？」の列は${colValues.join('・')}。\n${colValues.join('+')}＝${colSum}だから、たての「？」は${colSum}だね！`;
 }
 
 function checkSolution(values, puzzle, mode) {
