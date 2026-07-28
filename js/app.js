@@ -141,6 +141,7 @@ const appState = {
   challengeCountdown: null,
   challengeQuestionNumber: 1,
   challengeMistakeThisPuzzle: false,
+  challengeAnyMistake: false,
   challengeCombo: 0,
   comboDisplayText: null,
   milestoneDisplayText: null,
@@ -663,7 +664,7 @@ function computeStarTier(baseTier) {
 // judged purely on how efficiently the puzzle itself was solved.
 function computeMissionBaseTier() {
   if (appState.missionType === 'threeLeft') {
-    if (appState.missionMoveCount === 3 && appState.resultElapsed <= 7) return 3;
+    if (appState.missionMoveCount === 3 && appState.resultElapsed <= 10) return 3;
     if (appState.missionMoveCount === 3) return 2;
     return 1;
   }
@@ -823,6 +824,7 @@ function startChallenge() {
   appState.lastRecordMessage = '';
   appState.challengeQuestionNumber = 1;
   appState.challengeMistakeThisPuzzle = false;
+  appState.challengeAnyMistake = false;
   appState.challengeCombo = 0;
   appState.comboDisplayText = null;
   appState.milestoneDisplayText = null;
@@ -1146,10 +1148,32 @@ function finishCorrectFlow() {
 // its own extra callout text is あと3マス's speed bonus, independent of the
 // move-count that the star tier itself is judged on.
 function evaluateMissionResult() {
-  if (appState.missionType === 'threeLeft' && appState.resultElapsed <= 7) {
-    return 'スピード解答！\nあっという間に正解したね！';
+  const sc = appState.smartClear;
+  const firstTryClean = !sc.wrongSubmitted;
+  const parts = [];
+  if (appState.missionType === 'threeLeft') {
+    if (firstTryClean && !sc.hasExtraMove) {
+      parts.push('パーフェクト完成！\n残り3枚の場所を一度で見抜いたね！');
+    }
+    if (appState.resultElapsed <= 10) {
+      parts.push('スピード解答！\nあっという間に正解したね！');
+    }
+  } else if (appState.missionType === 'fixTheSwap') {
+    if (firstTryClean && appState.missionMoveCount === 1) {
+      parts.push('一発修正！\n入れかわった2枚をすぐに見抜いたね！');
+    }
+  } else if (appState.missionType === 'hiddenHint') {
+    if (firstTryClean) {
+      parts.push('完全計算！\n盤面も隠れたヒントも、一度で正しく求められたね！');
+    }
+  } else if (appState.missionType === 'moveLimit') {
+    if (appState.missionMoveCount === appState.missionMinSwaps) {
+      parts.push('最短ルート！\nむだのない入れ替えで、見事に完成させたね！');
+    } else {
+      parts.push('計画的クリア！\n先を考えながら、決められた回数で完成できたね！');
+    }
   }
-  return null;
+  return parts.length > 0 ? parts.join('\n\n') : null;
 }
 
 // この問題のカギ text for the 3 missions that have one (not 手数リミット).
@@ -1177,6 +1201,7 @@ function onWrongAnswer(result) {
   appState.message = 'おしい！どこかがちがうよ。\nもう一度見直してみよう！';
   if (appState.mode === 'challenge') {
     appState.challengeMistakeThisPuzzle = true;
+    appState.challengeAnyMistake = true;
     appState.challengeCombo = 0;
   }
   appState.smartClear.wrongSubmitted = true;
@@ -1236,7 +1261,11 @@ function finishChallenge() {
   appState.resultChallenge = {
     titleInfo: getChallengeTitle(stats.clearCount),
     isNewRecord: newBest,
-    allNoMistake: stats.clearCount > 0 && stats.noMistakeClears === stats.clearCount,
+    // Not just "every cleared puzzle was clean" (stats.noMistakeClears ===
+    // stats.clearCount) - that would ignore a mistake made on the final,
+    // never-cleared problem that time ran out on. challengeAnyMistake is set
+    // the instant any wrong answer happens, cleared or not.
+    allNoMistake: stats.clearCount > 0 && !appState.challengeAnyMistake,
     reachedFixedOne: stats.clearCount >= 5,
     reachedFixedZero: stats.clearCount >= 8,
     isFirstEver,
@@ -1486,25 +1515,42 @@ function renderHowTo() {
     </div>`;
 }
 
+// Reuses the exact same glow classes as the time-attack MAX/SS ranks -
+// .rank-tier-max/.rank-tier-high set their own background/box-shadow/shine
+// directly (not scoped under .rank-block), so applying them straight to a
+// .stat-item card produces the identical colored-and-glowing effect.
+function getTimeRecordTier(seconds, maxThreshold, highThreshold) {
+  if (seconds === null || seconds === undefined) return '';
+  if (seconds <= maxThreshold) return 'rank-tier-max';
+  if (seconds <= highThreshold) return 'rank-tier-high';
+  return '';
+}
+
+function getCountRecordTier(count, maxThreshold, highThreshold) {
+  if (count >= maxThreshold) return 'rank-tier-max';
+  if (count >= highThreshold) return 'rank-tier-high';
+  return '';
+}
+
 function renderRecords() {
   const records = appState.records;
   const fmt = (value) => (value === null || value === undefined ? '未記録' : formatResultTime(value));
   const items = [
-    renderStatItem('イージー 1問', fmt(records.timeAttack.easy1)),
-    renderStatItem('イージー 3問', fmt(records.timeAttack.easy3)),
-    renderStatItem('スタンダード 1問', fmt(records.timeAttack.standard1)),
-    renderStatItem('スタンダード 3問', fmt(records.timeAttack.standard3)),
-    renderStatItem('3分チャレンジ<br>最高クリア数', `${records.threeMinute.bestClearCount}問`),
-    renderStatItem('3分チャレンジ<br>最高連続ノーミス', `${records.threeMinute.bestStreak}問`),
+    renderStatItem('イージー 1問', fmt(records.timeAttack.easy1), getTimeRecordTier(records.timeAttack.easy1, 10, 20)),
+    renderStatItem('イージー 3問', fmt(records.timeAttack.easy3), getTimeRecordTier(records.timeAttack.easy3, 30, 60)),
+    renderStatItem('スタンダード 1問', fmt(records.timeAttack.standard1), getTimeRecordTier(records.timeAttack.standard1, 40, 80)),
+    renderStatItem('スタンダード 3問', fmt(records.timeAttack.standard3), getTimeRecordTier(records.timeAttack.standard3, 120, 240)),
+    renderStatItem('3分チャレンジ<br>最高クリア数', `${records.threeMinute.bestClearCount}問`, getCountRecordTier(records.threeMinute.bestClearCount, 8, 6)),
+    renderStatItem('3分チャレンジ<br>最高連続ノーミス', `${records.threeMinute.bestStreak}問`, getCountRecordTier(records.threeMinute.bestStreak, 8, 6)),
   ];
   const starIcon = '<span class="star-icon">★</span>';
   const starItems = [
-    renderStatItem('じっくりイージー', `${starIcon}${records.stars.leisureEasy}`),
-    renderStatItem('じっくりスタンダード', `${starIcon}${records.stars.leisureStandard}`),
-    renderStatItem('あと3マス', `${starIcon}${records.stars.threeLeft}`),
-    renderStatItem('まちがいを直せ', `${starIcon}${records.stars.fixTheSwap}`),
-    renderStatItem('かくされたヒント', `${starIcon}${records.stars.hiddenHint}`),
-    renderStatItem('手数リミット', `${starIcon}${records.stars.moveLimit}`),
+    renderStatItem('じっくりイージー', `${starIcon}${records.stars.leisureEasy}`, getCountRecordTier(records.stars.leisureEasy, 100, 50)),
+    renderStatItem('じっくりスタンダード', `${starIcon}${records.stars.leisureStandard}`, getCountRecordTier(records.stars.leisureStandard, 100, 50)),
+    renderStatItem('あと3マス', `${starIcon}${records.stars.threeLeft}`, getCountRecordTier(records.stars.threeLeft, 100, 50)),
+    renderStatItem('まちがいを直せ', `${starIcon}${records.stars.fixTheSwap}`, getCountRecordTier(records.stars.fixTheSwap, 100, 50)),
+    renderStatItem('かくされたヒント', `${starIcon}${records.stars.hiddenHint}`, getCountRecordTier(records.stars.hiddenHint, 100, 50)),
+    renderStatItem('手数リミット', `${starIcon}${records.stars.moveLimit}`, getCountRecordTier(records.stars.moveLimit, 100, 50)),
   ];
   appEl.innerHTML = `
     <div class="card">
@@ -1842,6 +1888,22 @@ function renderResult() {
     let challengeTierClass = '';
     if (stats.clearCount >= 8) challengeTierClass = 'rank-tier-max';
     else if (stats.clearCount >= 6) challengeTierClass = 'rank-tier-high';
+    // The final problem's answer, shown regardless of whether it was ever
+    // cleared - if time ran out on it, this is the only way to check what
+    // it should have been. appState.currentPuzzle still points at it since
+    // it's only ever reassigned when moving on to a new puzzle after a clear.
+    const finalBoard = getBoardDefinition('standard');
+    const finalAnswerBoardHtml = renderBoardGrid(
+      finalBoard.cols,
+      finalBoard.rows,
+      appState.currentPuzzle.columnSums,
+      appState.currentPuzzle.rowProducts,
+      appState.currentPuzzle.answer.map((value, index) => {
+        const row = Math.floor(index / finalBoard.cols);
+        const col = index % finalBoard.cols;
+        return `<div class="board-cell occupied" style="grid-column: ${col + 3}; grid-row: ${row + 3};"><span class="cell-value">${value}</span></div>`;
+      }).join(''),
+    );
     inner = `
       <h2>3分チャレンジ終了！</h2>
       <div class="rank-block ${challengeTierClass}">
@@ -1856,7 +1918,9 @@ function renderResult() {
       <div class="row">
         <button class="primary-btn" data-action="play-again">もう1回</button>
         <button class="ghost-btn" data-action="title-again">タイトルへ</button>
-      </div>`;
+      </div>
+      <p class="small result-board-label">最終問題の答え</p>
+      ${finalAnswerBoardHtml}`;
   } else if (appState.mode === 'mission') {
     const board = getBoardDefinition('standard');
     const pair = appState.missionType === 'hiddenHint' ? appState.missionHiddenPair : null;

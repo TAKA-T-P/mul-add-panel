@@ -81,37 +81,44 @@ function findProductCombos(pool, target) {
   return combos;
 }
 
+// Shared by buildPuzzleKey() and かくされたヒント's key: picks whichever row
+// (among `candidateIndices`) gives the strongest starting foothold - among
+// rows with only a single possible 3-digit combination, the one with the
+// smallest product is named outright (a small unique product is the easiest
+// one for a player to spot themselves); failing that (no candidate row is
+// uniquely determined), the row with the fewest candidate combinations is
+// pointed to instead. Never claims uniqueness unless findProductCombos()
+// actually confirms it.
+function pickRowInsightText(rows, digitPool, candidateIndices) {
+  const rowCombos = candidateIndices.map((index) => findProductCombos(digitPool, rows[index]));
+  const uniquePositions = rowCombos.reduce((acc, combos, pos) => {
+    if (combos.length === 1) acc.push(pos);
+    return acc;
+  }, []);
+  if (uniquePositions.length > 0) {
+    const bestPos = uniquePositions.reduce((best, pos) => (
+      rows[candidateIndices[pos]] < rows[candidateIndices[best]] ? pos : best
+    ), uniquePositions[0]);
+    const rowIndex = candidateIndices[bestPos];
+    const combo = rowCombos[bestPos][0];
+    return `積が${rows[rowIndex]}になるのは${combo.join('×')}。\nまず、この3枚が同じ横一列に入ると分かるよ！`;
+  }
+  const fewestPos = rowCombos.reduce((best, combos, pos) => (
+    combos.length < rowCombos[best].length ? pos : best
+  ), 0);
+  const rowIndex = candidateIndices[fewestPos];
+  return `積が${rows[rowIndex]}になる組み合わせは限られているよ。\n候補の少ない横一列から考えるのがカギ！`;
+}
+
 // Generates the "この問題のカギ" hint text shown after solving a puzzle
-// (じっくり and select missions only). Picks whichever row-product gives the
-// strongest starting foothold: among rows with only a single possible 3-digit
-// combination, the one with the smallest product is named outright (a small
-// unique product is the easiest one for a player to spot themselves);
-// failing that (no row is uniquely determined), the row with the fewest
-// candidate combinations is pointed to instead. Never claims uniqueness
-// unless findProductCombos() actually confirms it. A generic column-sum tip
-// is always appended, since knowing which 3 numbers belong in a row still
-// leaves their order within it undetermined.
+// (じっくり and select missions only). A generic column-sum tip is always
+// appended, since knowing which 3 numbers belong in a row still leaves their
+// order within it undetermined.
 function buildPuzzleKey(puzzle, boardType) {
   const digitPool = getExpectedDigits(getBoardSize(boardType));
   const rows = puzzle.rowProducts;
-  const rowCombos = rows.map((product) => findProductCombos(digitPool, product));
-  let insightText;
-  const uniqueIndices = rowCombos.reduce((acc, combos, index) => {
-    if (combos.length === 1) acc.push(index);
-    return acc;
-  }, []);
-  if (uniqueIndices.length > 0) {
-    const bestIndex = uniqueIndices.reduce((best, index) => (
-      rows[index] < rows[best] ? index : best
-    ), uniqueIndices[0]);
-    const combo = rowCombos[bestIndex][0];
-    insightText = `積が${rows[bestIndex]}になるのは${combo.join('×')}。\nまず、この3枚が同じ横一列に入ると分かるよ！`;
-  } else {
-    const fewestIndex = rowCombos.reduce((best, combos, index) => (
-      combos.length < rowCombos[best].length ? index : best
-    ), 0);
-    insightText = `積が${rows[fewestIndex]}になる組み合わせは限られているよ。\n候補の少ない横一列から考えるのがカギ！`;
-  }
+  const allIndices = rows.map((_, index) => index);
+  const insightText = pickRowInsightText(rows, digitPool, allIndices);
   const columnFollowup = '横に入る数字が分かったら、縦の和を使って並び順を決めよう！';
   return `${insightText}\n${columnFollowup}`;
 }
@@ -221,16 +228,17 @@ function buildMissionFixTheSwapKey(mistakeRows, mistakeCols) {
   return `入れ替える前は、${rowText}・${colText}で数が合っていなかったよ。合わない行と列が交わる場所に注目するのがカギ！`;
 }
 
-// かくされたヒント hides one rowProduct AND one columnSum at once (a pair);
-// the key explains both reveals in turn.
+// かくされたヒント's key: same style and priority as buildPuzzleKey() (see
+// pickRowInsightText()), but the row hidden behind "？" is never eligible to
+// be named - the player can't see its product, so it can't serve as a
+// starting foothold for them.
 function buildMissionHiddenHintKey(puzzle, pair) {
-  const board = getBoardDefinition('standard');
-  const rowValues = puzzle.answer.slice(pair.rowIndex * board.cols, pair.rowIndex * board.cols + board.cols);
-  const rowProduct = puzzle.rowProducts[pair.rowIndex];
-  const colValues = [];
-  for (let row = 0; row < board.rows; row += 1) colValues.push(puzzle.answer[row * board.cols + pair.colIndex]);
-  const colSum = puzzle.columnSums[pair.colIndex];
-  return `横の「？」の列は${rowValues.join('・')}。\n${rowValues.join('×')}＝${rowProduct}だから、横の「？」は${rowProduct}だね！\nたての「？」の列は${colValues.join('・')}。\n${colValues.join('+')}＝${colSum}だから、たての「？」は${colSum}だね！`;
+  const digitPool = getExpectedDigits(getBoardSize('standard'));
+  const rows = puzzle.rowProducts;
+  const visibleIndices = rows.map((_, index) => index).filter((index) => index !== pair.rowIndex);
+  const insightText = pickRowInsightText(rows, digitPool, visibleIndices);
+  const columnFollowup = '横に入る数字が分かったら、縦の和を使って並び順を決めよう！';
+  return `${insightText}\n${columnFollowup}`;
 }
 
 function checkSolution(values, puzzle, mode) {
