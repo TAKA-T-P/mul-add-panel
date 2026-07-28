@@ -579,7 +579,11 @@ function resetBoard() {
   if (isNoPanelMission()) {
     // まちがいを直せ / 手数リミット: there's no "answer minus fixed cells"
     // to fall back on - restore the exact initial (wrong/shuffled) layout.
+    // A 手数リミット hint-fixed cell (see useMissionHint()) is unlocked again
+    // by a reset - missionHintUsed stays true, though, so the hint itself
+    // isn't refunded.
     appState.boardValues = appState.missionInitialValues.slice();
+    appState.fixedCells = [];
     appState.missionMoveCount = 0;
   } else {
     appState.fixedCells = Array.from(appState.initialFixedCells);
@@ -999,7 +1003,9 @@ function startMission(missionType) {
 // Each mission with a hint gets exactly one use, spent differently depending
 // on the mission: まちがいを直せ reveals only which one row-or-column is
 // mismatched (never the exact cells); かくされたヒント reveals the hidden
-// row-product's actual number (the hidden column-sum stays hidden).
+// row-product's actual number (the hidden column-sum stays hidden); 手数
+// リミット locks one already-correctly-placed cell so it can't accidentally
+// be swapped away. All of them cost 1 star tier (see computeStarTier()).
 function useMissionHint() {
   if (appState.mode !== 'mission' || appState.missionHintUsed) return;
   if (appState.missionType === 'fixTheSwap') {
@@ -1017,6 +1023,31 @@ function useMissionHint() {
     appState.missionHintUsed = true;
     appState.smartClear.hintUsed = true;
     appState.missionHiddenRowRevealed = true;
+    render();
+  } else if (appState.missionType === 'moveLimit') {
+    const answer = appState.currentPuzzle.answer;
+    let targetIndex = appState.boardValues.findIndex((value, index) => (
+      value === answer[index] && !appState.fixedCells.includes(index)
+    ));
+    if (targetIndex < 0) {
+      // Nothing is currently sitting correctly - fall back to a cell that WAS
+      // correct in the initial shuffle, swapping its correct number (now
+      // sitting wherever the player moved it) back into place for them.
+      targetIndex = appState.missionInitialValues.findIndex((value, index) => (
+        value === answer[index] && !appState.fixedCells.includes(index)
+      ));
+      if (targetIndex < 0) return;
+      const correctValue = answer[targetIndex];
+      const currentIndex = appState.boardValues.indexOf(correctValue);
+      if (currentIndex !== targetIndex) {
+        const temp = appState.boardValues[targetIndex];
+        appState.boardValues[targetIndex] = appState.boardValues[currentIndex];
+        appState.boardValues[currentIndex] = temp;
+      }
+    }
+    appState.fixedCells.push(targetIndex);
+    appState.missionHintUsed = true;
+    appState.smartClear.hintUsed = true;
     render();
   }
 }
@@ -1568,7 +1599,7 @@ function renderMissionSelect() {
         ${Object.entries(MISSION_INFO).map(([key, info]) => `
         <div class="mode-option">
           <button class="secondary-btn" data-action="start-mission" data-mission="${key}">${info.label}</button>
-          <p class="small">${info.description}</p>
+          <p class="small">${info.description}${key === 'moveLimit' ? '<span class="mission-advanced-tag">【上級者向け】</span>' : ''}</p>
         </div>`).join('')}
       </div>
     </div>`;
@@ -1800,7 +1831,7 @@ function renderGame() {
   let hintButton = '';
   if (appState.mode === 'leisure') {
     hintButton = `<button class="ghost-btn" data-action="hint" ${appState.hintCount >= 3 ? 'disabled' : ''}>ヒント${appState.hintCount > 0 ? `(${appState.hintCount}/3)` : ''}</button>`;
-  } else if (isMission && (appState.missionType === 'fixTheSwap' || appState.missionType === 'hiddenHint')) {
+  } else if (isMission && (appState.missionType === 'fixTheSwap' || appState.missionType === 'hiddenHint' || appState.missionType === 'moveLimit')) {
     hintButton = `<button class="ghost-btn" data-action="toggle-mission-hint" ${appState.missionHintUsed ? 'disabled' : ''}>ヒント${appState.missionHintUsed ? '(使用済み)' : ''}</button>`;
   }
 

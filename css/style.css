@@ -73,6 +73,7 @@ nav.topbar { display:flex; justify-content:space-between; align-items:center; ga
 .tutorial-text { text-align:center; font-size: 1rem; line-height: 1.7; color: var(--ink); margin: 6px 0 4px; min-height: 4.5em; }
 .tutorial-brand { color: var(--accent); font-weight: 900; }
 .tutorial-cta { margin-bottom: 16px; }
+.mission-advanced-tag { color: #dc2626; font-weight: 900; margin-left: 4px; }
 .tutorial-nav { justify-content: center; }
 .tutorial-skip { display:block; margin: 10px auto 0; }
 .badge.timer { font-variant-numeric: tabular-nums; }
