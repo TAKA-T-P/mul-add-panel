@@ -71,6 +71,8 @@ nav.topbar { display:flex; justify-content:space-between; align-items:center; ga
 .tutorial-screen .board-grid { margin: 14px auto 10px; }
 .tutorial-progress { text-align:center; color: var(--muted); font-weight:700; margin: 0 0 4px; }
 .tutorial-text { text-align:center; font-size: 1rem; line-height: 1.7; color: var(--ink); margin: 6px 0 4px; min-height: 4.5em; }
+.tutorial-brand { color: var(--accent); font-weight: 900; }
+.tutorial-cta { margin-bottom: 16px; }
 .tutorial-nav { justify-content: center; }
 .tutorial-skip { display:block; margin: 10px auto 0; }
 .badge.timer { font-variant-numeric: tabular-nums; }

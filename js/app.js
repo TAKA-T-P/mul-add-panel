@@ -21,13 +21,13 @@ const MISSION_INFO = {
 const TUTORIAL_BOARD = { cols: 3, rows: 2, columnSums: [7, 3, 11], rowProducts: [15, 48] };
 const TUTORIAL_STEPS = [
   {
-    text: '空いているマスに、1から6までの数字を1つずつ置いて、\n表を完成させよう！',
+    text: '空いているマスに、1から6までの数字を1つずつ置いて、表を完成させよう！\n積（せき）はかけ算の答え、和（わ）はたし算の答えのことだよ。',
     board: [null, null, null, null, null, null],
     highlightRows: [],
     highlightCols: [],
   },
   {
-    text: 'まず、横の積に注目しよう。\n積が15になるのは、1×3×5の組み合わせだけ。\nこれで、上の段に1・3・5が入ると分かるね。\nどの場所に どの数字が入るかな？',
+    text: 'まず、横の積に注目しよう。\n積が15になるのは、1×3×5の組み合わせ。\nどの場所に どの数字が入るかな？',
     board: [null, null, null, null, null, null],
     highlightRows: [0],
     highlightCols: [],
@@ -51,7 +51,7 @@ const TUTORIAL_STEPS = [
     highlightCols: [0],
   },
   {
-    text: 'このように、積や和のヒントから表を完成させるのが、\nかけ×たし+パズルだよ！',
+    text: 'このように、積や和のヒントから\n表を完成させるのが\nかけ×たし+パズルだよ！',
     board: [3, 1, 5, 4, 2, 6],
     highlightRows: [0, 1],
     highlightCols: [0, 1, 2],
@@ -1022,6 +1022,10 @@ function useMissionHint() {
 }
 
 function submitAnswer() {
+  // While the "○" correct-mark is showing, a correct answer has already been
+  // recorded and finishCorrectFlow() is queued - mashing 解答する during that
+  // window must not re-run onCorrectAnswer() a second (or third...) time.
+  if (appState.showCorrectMark) return;
   const boardModeKey = getCurrentBoardModeKey();
   const result = checkSolution(appState.boardValues, appState.currentPuzzle, boardModeKey);
   if (result.valid) {
@@ -1594,7 +1598,7 @@ function renderHowTo() {
   appEl.innerHTML = `
     <div class="card">
       <nav class="topbar"><button class="back" data-action="back">← もどる</button><span class="mode-label">遊び方</span></nav>
-      <button class="primary-btn" data-action="show-tutorial">チュートリアルを見る</button>
+      <button class="primary-btn tutorial-cta" data-action="show-tutorial">チュートリアルを見る</button>
       ${renderRulesBody()}
     </div>`;
 }
@@ -1617,6 +1621,11 @@ function renderTutorialStep() {
   );
   const isFirst = appState.tutorialStepIndex === 0;
   const isLast = appState.tutorialStepIndex === TUTORIAL_STEPS.length - 1;
+  // formatMessage() escapes the text before converting line breaks, so the
+  // game name (plain text, no special characters) can be safely swapped for
+  // a styled span afterward without any injection risk.
+  const tutorialTextHtml = formatMessage(step.text)
+    .replace('かけ×たし+パズル', '<span class="tutorial-brand">かけ×たし+パズル</span>');
   appEl.innerHTML = `
     <div class="card tutorial-screen">
       <nav class="topbar">
@@ -1625,7 +1634,7 @@ function renderTutorialStep() {
       </nav>
       <p class="tutorial-progress">${appState.tutorialStepIndex + 1} / ${TUTORIAL_STEPS.length}</p>
       ${boardHtml}
-      <p class="tutorial-text">${formatMessage(step.text)}</p>
+      <p class="tutorial-text">${tutorialTextHtml}</p>
       <div class="row tutorial-nav">
         <button class="ghost-btn" data-action="tutorial-prev" ${isFirst ? 'disabled' : ''}>← 前へ</button>
         <button class="primary-btn" data-action="${isLast ? 'tutorial-exit' : 'tutorial-next'}">${isLast ? 'はじめる' : '次へ →'}</button>
@@ -1659,8 +1668,8 @@ function renderRecords() {
     renderStatItem('イージー 3問', fmt(records.timeAttack.easy3), getTimeRecordTier(records.timeAttack.easy3, 30, 60)),
     renderStatItem('スタンダード 1問', fmt(records.timeAttack.standard1), getTimeRecordTier(records.timeAttack.standard1, 40, 80)),
     renderStatItem('スタンダード 3問', fmt(records.timeAttack.standard3), getTimeRecordTier(records.timeAttack.standard3, 120, 240)),
-    renderStatItem('3分チャレンジ<br>最高クリア数', `${records.threeMinute.bestClearCount}問`, getCountRecordTier(records.threeMinute.bestClearCount, 8, 6)),
-    renderStatItem('3分チャレンジ<br>最高連続ノーミス', `${records.threeMinute.bestStreak}問`, getCountRecordTier(records.threeMinute.bestStreak, 8, 6)),
+    renderStatItem('3分チャレンジ<br>最高クリア数', `${records.threeMinute.bestClearCount}問`, getCountRecordTier(records.threeMinute.bestClearCount, 8, 5)),
+    renderStatItem('3分チャレンジ<br>最高連続ノーミス', `${records.threeMinute.bestStreak}問`, getCountRecordTier(records.threeMinute.bestStreak, 8, 5)),
   ];
   const starIcon = '<span class="star-icon">★</span>';
   const starItems = [
@@ -1823,7 +1832,7 @@ function renderGame() {
       <div class="controls">
         <button class="ghost-btn" data-action="reset">リセット</button>
         ${hintButton}
-        <button class="primary-btn" data-action="submit" ${allFilled ? '' : 'disabled'}>解答する</button>
+        <button class="primary-btn" data-action="submit" ${allFilled && !appState.showCorrectMark ? '' : 'disabled'}>解答する</button>
       </div>
       <p class="mode-label">${getBoardSize(boardModeKey) === '3x2' ? 'イージー 3×2' : 'スタンダード 3×3'}　${header}</p>
       ${isMission ? `<p class="small mission-guidance">${MISSION_INFO[appState.missionType].description}</p>` : ''}
@@ -1946,7 +1955,7 @@ function renderResult() {
         <h2>正解！</h2>
         <p class="star-rating ${stars === '★★★' ? 'star-rating-perfect' : ''}">${stars}</p>
       </div>
-      <p class="small">よく考えたね！</p>
+      ${appState.resultSmartClear ? '' : '<p class="small">よく考えたね！</p>'}
       ${renderSmartClearBlock(appState.resultSmartClear, false)}
       ${renderPuzzleKeyBlock(buildPuzzleKey(appState.currentPuzzle, boardModeKey))}
       <div class="row">
@@ -1958,11 +1967,11 @@ function renderResult() {
     const best = appState.resultPreviousBest;
     inner = `
       <h2>1問クリア！</h2>
+      ${renderEvaluationBlock(appState.resultEvaluation)}
       <div class="stat-grid stat-grid-2">
         ${renderStatItem('クリアタイム', formatResultTime(appState.resultElapsed))}
         ${renderStatItem('ベストタイム', best === null || best === undefined ? '初挑戦' : formatResultTime(best))}
       </div>
-      ${renderEvaluationBlock(appState.resultEvaluation)}
       ${appState.isNewRecord ? '<p class="record-badge">自己ベスト更新！</p>' : ''}
       ${renderSmartClearBlock(appState.resultSmartClear, false)}
       <div class="row">
@@ -1977,13 +1986,13 @@ function renderResult() {
     const questionItems = appState.threeQuestionTimes.map((time, index) => renderStatItem(`第${index + 1}問`, formatResultTime(time))).join('');
     inner = `
       <h2>3問クリア！</h2>
+      ${renderEvaluationBlock(appState.resultEvaluation)}
       <div class="stat-grid stat-grid-3">
         ${renderStatItem('1問平均', formatResultTime(averageSeconds))}
         ${renderStatItem('合計タイム', formatResultTime(appState.resultElapsed), 'stat-item-emphasis')}
         ${renderStatItem('ベストタイム', best === null || best === undefined ? '初挑戦' : formatResultTime(best))}
         ${questionItems}
       </div>
-      ${renderEvaluationBlock(appState.resultEvaluation)}
       ${appState.isNewRecord ? '<p class="record-badge">自己ベスト更新！</p>' : ''}
       ${renderSmartClearBlock(appState.resultSmartClear, true)}
       <div class="row">
