@@ -109,7 +109,7 @@ const SMART_CLEAR_INFO = {
     tripleComment: '3問すべて一発配置！先を読む力と正確さがすばらしい！',
   },
   perfectLogic: {
-    comment: '完全推理！\n積と和を手掛かりに、自分の力だけで答えを導き出したね！',
+    comment: '完全推理！\n積と和を手がかりに、自分の力だけで答えを導き出したね！',
     tripleComment: '3問すべてヒントなし・ノーミス！安定した推理力だね！',
   },
   noMistake: {
@@ -684,7 +684,7 @@ function getChallengeMilestoneText(questionNumber) {
     1: 'レベルアップ！\n次は固定マスが4枚！',
     2: 'さらに難しくなるぞ！\n次は固定マスが3枚！',
     3: 'ここから上級！\n次は固定マスが2枚！',
-    4: '手掛かりはあと1枚！\n本格推理に挑戦！',
+    4: '次は手がかり1枚！\n本格推理に挑戦！',
     7: '完全推理ゾーン突入！\nここからは固定マスなし！',
   };
   return map[questionNumber] || null;
@@ -1699,8 +1699,8 @@ function renderRecords() {
     renderStatItem('イージー 3問', fmt(records.timeAttack.easy3), getTimeRecordTier(records.timeAttack.easy3, 30, 60)),
     renderStatItem('スタンダード 1問', fmt(records.timeAttack.standard1), getTimeRecordTier(records.timeAttack.standard1, 40, 80)),
     renderStatItem('スタンダード 3問', fmt(records.timeAttack.standard3), getTimeRecordTier(records.timeAttack.standard3, 120, 240)),
-    renderStatItem('3分チャレンジ<br>最高クリア数', `${records.threeMinute.bestClearCount}問`, getCountRecordTier(records.threeMinute.bestClearCount, 8, 5)),
-    renderStatItem('3分チャレンジ<br>最高連続ノーミス', `${records.threeMinute.bestStreak}問`, getCountRecordTier(records.threeMinute.bestStreak, 8, 5)),
+    renderStatItem('3分チャレンジ<br>最高クリア数', `${records.threeMinute.bestClearCount}問`, getCountRecordTier(records.threeMinute.bestClearCount, 8, 6)),
+    renderStatItem('3分チャレンジ<br>最高連続ノーミス', `${records.threeMinute.bestStreak}問`, getCountRecordTier(records.threeMinute.bestStreak, 8, 6)),
   ];
   const starIcon = '<span class="star-icon">★</span>';
   const starItems = [
@@ -2039,9 +2039,9 @@ function renderResult() {
     if (info.isNewRecord) extraMessages.push('<p class="record-badge">自己ベスト更新！<br>前の自分を超えたぞ！</p>');
     if (info.allNoMistake) extraMessages.push('<p class="record-badge">パーフェクト思考！<br>一度も間違えずに答えを導けたね！</p>');
     if (info.reachedFixedZero) {
-      extraMessages.push('<p class="record-badge">完全推理成功！<br>積と和だけを手掛かりに、すべての数字を見抜いた！</p>');
+      extraMessages.push('<p class="record-badge">完全推理成功！<br>積と和だけを手がかりに、すべての数字を見抜いた！</p>');
     } else if (info.reachedFixedOne) {
-      extraMessages.push('<p class="record-badge">固定マス1個で正解！<br>少ない手掛かりから答えを完成させた！</p>');
+      extraMessages.push('<p class="record-badge">固定マス1個で正解！<br>少ない手がかりから答えを完成させた！</p>');
     }
     if (info.isFirstEver) extraMessages.push('<p class="record-badge">初チャレンジ完了！<br>まずは最後まで挑戦したことがすばらしい！</p>');
     let challengeTierClass = '';
