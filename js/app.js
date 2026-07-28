@@ -1103,6 +1103,7 @@ function finishCorrectFlow() {
     appState.resultSmartClear = appState.lastSmartClearTier;
     appState.resultStarTier = computeStarTier(3);
     recordStars(getLeisureStarCategory(), appState.resultStarTier);
+    playResultChime();
     appState.screen = 'result';
     render();
     return;
@@ -1131,6 +1132,7 @@ function finishCorrectFlow() {
       fixedCells: appState.fixedCells.slice(),
     }];
     stopUiTicker();
+    playResultChime();
     appState.screen = 'result';
     render();
     return;
@@ -1173,6 +1175,7 @@ function finishCorrectFlow() {
       totalTimeMs: totalElapsed * 1000,
     });
     stopUiTicker();
+    playResultChime();
     appState.screen = 'result';
     render();
     return;
@@ -1204,6 +1207,7 @@ function finishCorrectFlow() {
     appState.resultStarTier = computeStarTier(computeMissionBaseTier());
     recordStars(appState.missionType, appState.resultStarTier);
     appState.resultMissionText = evaluateMissionResult();
+    playResultChime();
     appState.screen = 'result';
     render();
   }
@@ -1376,6 +1380,16 @@ function playCorrectSound() {
   const notes = [523.25, 659.25, 783.99, 1046.5];
   notes.forEach((freq, index) => {
     setTimeout(() => playTone(freq, 150, 'triangle'), index * 85);
+  });
+}
+
+// A short, calm close-out chime for reaching any result screen other than
+// 3分チャレンジ's (じっくり/タイムアタック/ミッション) - fewer notes, a slower
+// tempo, and a softer volume than playChallengeResultFanfare()'s bigger fanfare.
+function playResultChime() {
+  const notes = [659.25, 783.99, 1046.5];
+  notes.forEach((freq, index) => {
+    setTimeout(() => playTone(freq, 220, 'triangle', 0.09), index * 130);
   });
 }
 
