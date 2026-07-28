@@ -14,6 +14,50 @@ const MISSION_INFO = {
   moveLimit: { label: '手数リミット', description: '決められた回数以内に、入れ替えだけで完成させよう！' },
 };
 
+// Fixed イージー3×2 example used by the tutorial - answer is 3,1,5 / 4,2,6,
+// giving column sums 7,3,11 and row products 15,48 (matches the あそびかた
+// diagram). Each step's `board` is what's shown filled in at that point;
+// `highlightRows`/`highlightCols` mark which axis clues + cells to call out.
+const TUTORIAL_BOARD = { cols: 3, rows: 2, columnSums: [7, 3, 11], rowProducts: [15, 48] };
+const TUTORIAL_STEPS = [
+  {
+    text: '空いているマスに、1から6までの数字を1つずつ置いて、\n表を完成させよう！',
+    board: [null, null, null, null, null, null],
+    highlightRows: [],
+    highlightCols: [],
+  },
+  {
+    text: 'まず、横の積に注目しよう。\n積が15になるのは、1×3×5の組み合わせだけ。\nこれで、上の段に1・3・5が入ると分かるね。\nどの場所に どの数字が入るかな？',
+    board: [null, null, null, null, null, null],
+    highlightRows: [0],
+    highlightCols: [],
+  },
+  {
+    text: '次に、たての和に注目しよう。\n和が3になるのは、1+2の組み合わせだけ。\n真ん中の列は、上が1、下が2に決まるね。',
+    board: [null, 1, null, null, 2, null],
+    highlightRows: [],
+    highlightCols: [1],
+  },
+  {
+    text: 'さらに、和が11になるのは、5+6の組み合わせだけ。\n右の列は、上が5、下が6に決まるね。',
+    board: [null, 1, 5, null, 2, 6],
+    highlightRows: [],
+    highlightCols: [2],
+  },
+  {
+    text: '残りの数字は、左上に3、左下に4を置けば完成！',
+    board: [3, 1, 5, 4, 2, 6],
+    highlightRows: [],
+    highlightCols: [0],
+  },
+  {
+    text: 'このように、積や和のヒントから表を完成させるのが、\nかけ×たし+パズルだよ！',
+    board: [3, 1, 5, 4, 2, 6],
+    highlightRows: [0, 1],
+    highlightCols: [0, 1, 2],
+  },
+];
+
 const CHIP_COLORS = [
   { id: 'orange', label: 'オレンジ', swatch: '#ffb066' },
   { id: 'blue', label: 'ブルー', swatch: '#7db8ff' },
@@ -121,6 +165,8 @@ function getTimeAttackEvaluation({ boardType, questionCount, totalTimeMs }) {
 const appState = {
   screen: 'title',
   mode: null,
+  tutorialStepIndex: 0,
+  tutorialOrigin: 'howto',
   puzzleSize: 'easy',
   puzzlePool: {},
   currentPuzzle: null,
@@ -206,7 +252,25 @@ function init() {
   bindGlobalEvents();
   setupBackgroundNumbers();
   loadPuzzleData();
+  if (!appState.settings.tutorialSeen) {
+    startTutorial('auto');
+  }
   render();
+}
+
+// Marks the tutorial seen the moment it's opened (not just on completion) so
+// that closing the tab mid-tutorial still counts - it won't auto-show again
+// on the next launch either way.
+function startTutorial(origin) {
+  appState.tutorialOrigin = origin;
+  appState.tutorialStepIndex = 0;
+  appState.screen = 'tutorial';
+  appState.settings.tutorialSeen = true;
+  saveSettings(appState.settings);
+}
+
+function getTutorialExitScreen() {
+  return appState.tutorialOrigin === 'howto' ? 'howto' : 'title';
 }
 
 // Decorative "1..9 drifting toward the upper-right" backdrop for the title
@@ -272,6 +336,10 @@ function handleClick(event) {
   }
   switch (action) {
     case 'show-howto': appState.screen = 'howto'; break;
+    case 'show-tutorial': startTutorial('howto'); break;
+    case 'tutorial-prev': appState.tutorialStepIndex = Math.max(0, appState.tutorialStepIndex - 1); break;
+    case 'tutorial-next': appState.tutorialStepIndex = Math.min(TUTORIAL_STEPS.length - 1, appState.tutorialStepIndex + 1); break;
+    case 'tutorial-exit': appState.screen = getTutorialExitScreen(); break;
     case 'show-missions': appState.screen = 'mission-select'; break;
     case 'start-mission': startMission(actionEl.dataset.mission); break;
     case 'toggle-mission-hint': useMissionHint(); break;
@@ -1419,6 +1487,7 @@ function render() {
     case 'play-style': renderPlayStyle(); break;
     case 'mission-select': renderMissionSelect(); break;
     case 'howto': renderHowTo(); break;
+    case 'tutorial': renderTutorialStep(); break;
     case 'records': renderRecords(); break;
     case 'settings': renderSettings(); break;
     case 'countdown': renderCountdown(); break;
@@ -1498,7 +1567,7 @@ function renderRulesBody() {
         <li>全部のマスが埋まったら「解答する」を押して確かめよう。</li>
       </ol>
       <div class="tutorial-example">
-        ${renderBoardGrid(3, 2, [5, 7, 9], [15, 48], [1, 5, 3, 4, 2, 6].map((value, index) => {
+        ${renderBoardGrid(3, 2, [7, 3, 11], [15, 48], [3, 1, 5, 4, 2, 6].map((value, index) => {
           const row = Math.floor(index / 3);
           const col = index % 3;
           return `<div class="board-cell occupied" style="grid-column: ${col + 3}; grid-row: ${row + 3};"><span class="cell-value">${value}</span></div>`;
@@ -1511,7 +1580,43 @@ function renderHowTo() {
   appEl.innerHTML = `
     <div class="card">
       <nav class="topbar"><button class="back" data-action="back">← もどる</button><span class="mode-label">遊び方</span></nav>
+      <button class="primary-btn" data-action="show-tutorial">チュートリアルを見る</button>
       ${renderRulesBody()}
+    </div>`;
+}
+
+// Step-by-step walkthrough of a single fixed イージー3×2 example, reusing
+// renderBoardGrid() so it looks exactly like every other board in the app.
+// Always exits back to wherever it was opened from (see getTutorialExitScreen()).
+function renderTutorialStep() {
+  const step = TUTORIAL_STEPS[appState.tutorialStepIndex];
+  const board = TUTORIAL_BOARD;
+  const cellsHtml = step.board.map((value, index) => {
+    const row = Math.floor(index / board.cols);
+    const col = index % board.cols;
+    const isHighlighted = step.highlightRows.includes(row) || step.highlightCols.includes(col);
+    return `<div class="board-cell ${value !== null ? 'occupied' : ''} ${isHighlighted ? 'tutorial-highlight' : ''}" style="grid-column: ${col + 3}; grid-row: ${row + 3};"><span class="cell-value">${value ?? ''}</span></div>`;
+  }).join('');
+  const boardHtml = renderBoardGrid(
+    board.cols, board.rows, board.columnSums, board.rowProducts, cellsHtml,
+    [], [], [], [], step.highlightCols, step.highlightRows,
+  );
+  const isFirst = appState.tutorialStepIndex === 0;
+  const isLast = appState.tutorialStepIndex === TUTORIAL_STEPS.length - 1;
+  appEl.innerHTML = `
+    <div class="card tutorial-screen">
+      <nav class="topbar">
+        <button class="back" data-action="tutorial-exit">← もどる</button>
+        <span class="mode-label">チュートリアル</span>
+      </nav>
+      <p class="tutorial-progress">${appState.tutorialStepIndex + 1} / ${TUTORIAL_STEPS.length}</p>
+      ${boardHtml}
+      <p class="tutorial-text">${formatMessage(step.text)}</p>
+      <div class="row tutorial-nav">
+        <button class="ghost-btn" data-action="tutorial-prev" ${isFirst ? 'disabled' : ''}>← 前へ</button>
+        <button class="primary-btn" data-action="${isLast ? 'tutorial-exit' : 'tutorial-next'}">${isLast ? 'はじめる' : '次へ →'}</button>
+      </div>
+      ${appState.tutorialOrigin === 'auto' ? '<button class="ghost-btn small-btn tutorial-skip" data-action="tutorial-exit">スキップ</button>' : ''}
     </div>`;
 }
 
@@ -1592,14 +1697,14 @@ function renderSettings() {
 // labels line up exactly with their column/row and that every inter-cell gap
 // (horizontal and vertical alike) is identical, since it is all one grid
 // rather than several independently-sized ones trying to visually coincide.
-function renderBoardGrid(cols, rows, columnSums, rowProducts, cellsHtml, wrongCols = [], wrongRows = [], hiddenCols = [], hiddenRows = []) {
+function renderBoardGrid(cols, rows, columnSums, rowProducts, cellsHtml, wrongCols = [], wrongRows = [], hiddenCols = [], hiddenRows = [], highlightCols = [], highlightRows = []) {
   const track = `clamp(48px, 16vw, 64px)`;
   return `
     <div class="board-grid" style="grid-template-columns: max-content max-content repeat(${cols}, ${track}); grid-template-rows: max-content max-content repeat(${rows}, ${track});">
       <div class="group-label col-group-label" style="grid-column: 3 / -1; grid-row: 1;">たての和</div>
-      ${columnSums.map((value, i) => `<div class="axis-label col-label ${wrongCols.includes(i) ? 'wrong' : ''} ${hiddenCols.includes(i) ? 'hidden-mystery' : ''}" style="grid-column: ${i + 3}; grid-row: 2;">${value}</div>`).join('')}
+      ${columnSums.map((value, i) => `<div class="axis-label col-label ${wrongCols.includes(i) ? 'wrong' : ''} ${hiddenCols.includes(i) ? 'hidden-mystery' : ''} ${highlightCols.includes(i) ? 'highlight' : ''}" style="grid-column: ${i + 3}; grid-row: 2;">${value}</div>`).join('')}
       <div class="group-label row-group-label" style="grid-column: 1; grid-row: 3 / -1;">横の積</div>
-      ${rowProducts.map((value, i) => `<div class="axis-label row-label ${wrongRows.includes(i) ? 'wrong' : ''} ${hiddenRows.includes(i) ? 'hidden-mystery' : ''}" style="grid-column: 2; grid-row: ${i + 3};">${value}</div>`).join('')}
+      ${rowProducts.map((value, i) => `<div class="axis-label row-label ${wrongRows.includes(i) ? 'wrong' : ''} ${hiddenRows.includes(i) ? 'hidden-mystery' : ''} ${highlightRows.includes(i) ? 'highlight' : ''}" style="grid-column: 2; grid-row: ${i + 3};">${value}</div>`).join('')}
       <div class="board-panel-bg" style="grid-column: 3 / -1; grid-row: 3 / -1;"></div>
       ${cellsHtml}
     </div>`;

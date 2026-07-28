@@ -38,7 +38,7 @@ function resetRecords() {
 }
 
 function defaultSettings() {
-  return { sound: true, chipColor: 'orange' };
+  return { sound: true, chipColor: 'orange', tutorialSeen: false };
 }
 
 function readSettings() {
