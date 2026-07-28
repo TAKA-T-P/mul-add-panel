@@ -51,6 +51,7 @@ nav.topbar { display:flex; justify-content:space-between; align-items:center; ga
 .board-cell { position: relative; width: 100%; height: 100%; border-radius: 16px; border: 2px solid var(--border); background: white; display:flex; flex-direction: column; align-items:center; justify-content:center; font-size: 1.25rem; font-weight: 800; font-family: "Hiragino Maru Gothic ProN", "UD Digi Kyokasho N-B", "Rounded Mplus 1c", "Yu Gothic", sans-serif; transition: transform 0.15s ease, background 0.15s ease, border-color 0.15s ease; touch-action: none; }
 .board-cell .cell-value { line-height: 1; }
 .board-cell.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
+.board-cell.occupied.selected { background: var(--accent-soft); border-color: var(--accent); color: var(--ink); box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
 .board-cell.tutorial-highlight { box-shadow: 0 0 0 3px rgba(78,197,183,0.55); }
 .board-cell.occupied { background: var(--chip); border-color: var(--chip-border); color: var(--chip-ink); }
 .board-cell.shake { animation: shake 0.25s ease-in-out; }
