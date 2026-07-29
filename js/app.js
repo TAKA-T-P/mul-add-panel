@@ -420,7 +420,8 @@ function handlePointerMove(event) {
     dragCtx.ghostEl.className = 'drag-ghost';
     dragCtx.ghostEl.textContent = String(dragCtx.value);
     document.body.appendChild(dragCtx.ghostEl);
-    playPickupSound();
+    // Same tone as tap-selecting a number, since it's the same action.
+    playPanelSelectSound();
   }
   if (dragCtx.dragging) {
     event.preventDefault();
@@ -435,7 +436,8 @@ function handlePointerUp(event) {
   dragCtx = null;
   if (!ctx.dragging) return;
   if (ctx.ghostEl) ctx.ghostEl.remove();
-  playDropSound();
+  // Same tone as tap-placing/swapping a number, since it's the same action.
+  playTapSound();
   const target = document.elementFromPoint(event.clientX, event.clientY);
   const cellEl = target && target.closest('.board-cell');
   if (cellEl && !cellEl.classList.contains('fixed')) {
@@ -1270,8 +1272,14 @@ function evaluateMissionResult() {
       parts.push('一発修正！\n入れかわった2枚をすぐに見抜いたね！');
     }
   } else if (appState.missionType === 'hiddenHint') {
-    if (firstTryClean) {
-      parts.push('完全計算！\n盤面も隠れたヒントも、一度で正しく求められたね！');
+    // Same priority as evaluateSmartClear() elsewhere: a wrong submission
+    // outranks hint use as the headline story, even if both happened.
+    if (sc.wrongSubmitted) {
+      parts.push('ナイスリカバリー！\n間違いを見直して、自分の力で正解に直せたね！');
+    } else if (sc.hintUsed) {
+      parts.push('推理完了！\nヒントをうまく使って、正解にたどり着いたね！');
+    } else {
+      parts.push('完全正解！\nかくされたヒントがあっても、一度で正しく求められたね！');
     }
   } else if (appState.missionType === 'moveLimit') {
     if (appState.missionMoveCount === appState.missionMinSwaps) {
@@ -1450,41 +1458,34 @@ function playClickSound() {
   playTone(520, 70, 'triangle');
 }
 
-// Placing or swapping a number into a cell.
+// Placing or swapping a number into a cell - by tapping, or by letting go of
+// a drag.
 function playTapSound() {
   playTone(880, 55, 'triangle');
 }
 
-// Selecting a number - either tapping a chip in the panel, or picking an
-// already-placed number back up (not swapping it) - pitched distinctly below
-// playTapSound() so "selecting" and "placing/swapping" sound different.
+// Selecting a number - tapping a chip in the panel, picking an already-placed
+// number back up (not swapping it), or starting a drag on either of those -
+// pitched distinctly below playTapSound() so "selecting" and
+// "placing/swapping" sound different.
 function playPanelSelectSound() {
   playTone(440, 55, 'triangle');
-}
-
-// Picking a number chip up to start a drag.
-function playPickupSound() {
-  playTone(480, 55, 'square');
-}
-
-// Letting go of a dragged number chip, whether or not it lands on a cell.
-function playDropSound() {
-  playTone(680, 90, 'square');
 }
 
 // ~60% of the standard tone volume - the countdown fires every game start,
 // so it's kept quieter than one-off feedback sounds.
 const COUNTDOWN_VOLUME = 0.12 * 0.6;
 
-// "3", "2", "1" ticks before a game starts.
+// "3", "2", "1" ticks before a game starts. Sine instead of square for a
+// softer, less buzzy tone.
 function playCountdownTickSound() {
-  playTone(500, 110, 'square', COUNTDOWN_VOLUME);
+  playTone(500, 110, 'sine', COUNTDOWN_VOLUME);
 }
 
 // The final "START!" beat of the countdown.
 function playCountdownGoSound() {
-  playTone(700, 100, 'square', COUNTDOWN_VOLUME);
-  setTimeout(() => playTone(1000, 220, 'square', COUNTDOWN_VOLUME), 100);
+  playTone(700, 100, 'sine', COUNTDOWN_VOLUME);
+  setTimeout(() => playTone(1000, 220, 'sine', COUNTDOWN_VOLUME), 100);
 }
 
 // Once-per-second tick for the final 10 seconds of the 3-minute challenge.
