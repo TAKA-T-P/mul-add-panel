@@ -1,6 +1,9 @@
 const BOARD_DEFINITIONS = {
   easy: { rows: 2, cols: 3, numbers: 6 },
   standard: { rows: 3, cols: 3, numbers: 9 },
+  // エキスパートミッション専用: 4段×3列、1〜12。列は他の盤面と同じ3列幅なので、
+  // 横の積は変わらず3数の積、縦の和だけが4数の和になる。
+  expert: { rows: 4, cols: 3, numbers: 12 },
 };
 
 function getBoardDefinition(mode) {
@@ -8,11 +11,14 @@ function getBoardDefinition(mode) {
 }
 
 function getBoardSize(mode) {
-  return mode === 'easy' ? '3x2' : '3x3';
+  if (mode === 'easy') return '3x2';
+  if (mode === 'expert') return '4x3';
+  return '3x3';
 }
 
 function getExpectedDigits(size) {
-  return Array.from({ length: size === '3x2' ? 6 : 9 }, (_, index) => index + 1);
+  const count = size === '3x2' ? 6 : size === '4x3' ? 12 : 9;
+  return Array.from({ length: count }, (_, index) => index + 1);
 }
 
 function shuffleArray(list) {

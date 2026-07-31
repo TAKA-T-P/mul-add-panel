@@ -12,6 +12,7 @@ const MISSION_INFO = {
   fixTheSwap: { label: 'まちがいを直せ', description: '2枚の数字が入れかわっているよ。正しく直そう！' },
   hiddenHint: { label: 'かくされたヒント', description: 'かくされた数字を推理して、全部のマスをうめよう！' },
   moveLimit: { label: '手数リミット', description: '決められた回数以内に、入れ替えだけで完成させよう！' },
+  expert: { label: 'エキスパート', description: '1～12を使う4×3の超上級パズル！' },
 };
 
 // Fixed イージー3×2 example used by the tutorial - answer is 3,1,5 / 4,2,6,
@@ -303,11 +304,12 @@ function setupBackgroundNumbers() {
 }
 
 async function loadPuzzleData() {
-  const [easy, standard] = await Promise.all([
+  const [easy, standard, expert] = await Promise.all([
     fetch('data/puzzles-3x2.json').then((response) => response.json()),
     fetch('data/puzzles-3x3.json').then((response) => response.json()),
+    fetch('data/puzzles-4x3.json').then((response) => response.json()),
   ]);
-  appState.puzzlePool = { easy, standard };
+  appState.puzzlePool = { easy, standard, expert };
   render();
 }
 
@@ -609,7 +611,8 @@ function resetBoard() {
 }
 
 function useHint() {
-  if (appState.mode !== 'leisure' || appState.hintCount >= 3) return;
+  const isExpertMission = appState.mode === 'mission' && appState.missionType === 'expert';
+  if ((appState.mode !== 'leisure' && !isExpertMission) || appState.hintCount >= 3) return;
   const answer = appState.currentPuzzle.answer;
   const emptyIndex = appState.boardValues.findIndex((value) => value === null);
 
@@ -651,6 +654,7 @@ function useHint() {
 // --- Puzzle lifecycle helpers ---
 
 function getCurrentBoardModeKey() {
+  if (appState.mode === 'mission' && appState.missionType === 'expert') return 'expert';
   return (appState.mode === 'challenge' || appState.mode === 'mission') ? 'standard' : appState.puzzleSize;
 }
 
@@ -698,7 +702,7 @@ function getChallengeMilestoneText(questionNumber) {
 
 function getNextPuzzle(sizeOverride = null) {
   const chooseSize = sizeOverride || appState.puzzleSize;
-  const poolKey = chooseSize === 'easy' ? 'easy' : 'standard';
+  const poolKey = chooseSize === 'easy' ? 'easy' : chooseSize === 'expert' ? 'expert' : 'standard';
   let pool = appState.puzzlePool[poolKey];
   if (appState.mode !== 'challenge') {
     const midPool = pool.filter((puzzle) => puzzle.difficulty >= 2 && puzzle.difficulty <= 4);
@@ -752,8 +756,8 @@ function computeMissionBaseTier() {
   if (appState.missionType === 'moveLimit') {
     return appState.moveCount === appState.missionMinSwaps ? 3 : 2;
   }
-  // かくされたヒント has no move/time criterion - reaching the result screen
-  // at all means it was solved, so it starts at the top tier.
+  // かくされたヒント and エキスパートは移動回数/時間の基準がなく、結果画面に
+  // 到達できた時点で最高tierから始まる（あとはヒント/ミス減点のみ）。
   return 3;
 }
 
@@ -774,6 +778,7 @@ function getLeisureStarCategory() {
 function isPerfectMoveClear() {
   if (appState.mode === 'leisure') return appState.resultSmartClear === 'oneShot';
   if (appState.mode !== 'mission' || appState.smartClear.resetUsed) return false;
+  if (appState.missionType === 'expert') return !appState.smartClear.hintUsed;
   if (appState.missionType === 'threeLeft') return appState.moveCount === 3;
   if (appState.missionType === 'fixTheSwap') return appState.moveCount === 1;
   if (appState.missionType === 'hiddenHint') return appState.moveCount === 9;
@@ -1001,6 +1006,11 @@ function startMission(missionType) {
     const pairs = puzzle.hiddenHintPairs || [];
     appState.missionHiddenPair = pairs[Math.floor(Math.random() * pairs.length)] || null;
     puzzleState = { values: Array(9).fill(null), fixed: [] };
+  } else if (missionType === 'expert') {
+    // 1〜12・4行×3列の空欄スタート。時間制限なしで、ヒントはじっくりと同じ
+    // useHint()を再利用する（useMissionHintは使わない）。
+    puzzle = getNextPuzzle('expert');
+    puzzleState = { values: Array(12).fill(null), fixed: [] };
   } else {
     const setup = createMissionMoveLimitState(puzzle);
     puzzleState = { values: setup.values, fixed: [] };
@@ -1262,6 +1272,7 @@ function finishCorrectFlow() {
 
   if (appState.mode === 'mission') {
     if (appState.missionType === 'threeLeft') appState.resultElapsed = appState.timer.getElapsedSeconds();
+    appState.resultSmartClear = appState.lastSmartClearTier;
     appState.resultStarTier = computeStarTier(computeMissionBaseTier());
     recordStars(appState.missionType, appState.resultStarTier);
     appState.resultMissionText = evaluateMissionResult();
@@ -1311,6 +1322,17 @@ function evaluateMissionResult() {
       parts.push('最短ルート！\nむだのない入れ替えで、見事に完成させたね！');
     } else {
       parts.push('計画的クリア！\n先を考えながら、決められた回数で完成できたね！');
+    }
+  } else if (appState.missionType === 'expert') {
+    // Tier-matched praise text per the エキスパート spec - keyed off the star
+    // tier already computed (computeMissionBaseTier() always starts エキス
+    // パート at 3, so tier 3/2/1 here lines up with 0/1/2 star penalties).
+    if (appState.resultStarTier === 3) {
+      parts.push('エキスパート完全制覇！\nヒントなしで12枚すべての場所を見抜いた！計算力も推理力も最高峰！');
+    } else if (appState.resultStarTier === 2) {
+      parts.push('驚異のエキスパートクリア！\nわずかなヒントから超難問を完成！数字のつながりを見抜く力がすばらしい！');
+    } else {
+      parts.push('見事、超難問突破！\n12枚の数字を使う難しいパズルを最後まで解き切ったね！その集中力とねばり強さは本物！');
     }
   }
   return parts.length > 0 ? parts.join('\n\n') : null;
@@ -1622,11 +1644,16 @@ function renderMissionSelect() {
     <div class="card translucent-card">
       <nav class="topbar"><button class="back" data-action="back">← もどる</button><span class="mode-label">ミッションをえらぼう</span></nav>
       <div class="button-grid">
-        ${Object.entries(MISSION_INFO).map(([key, info]) => `
-        <div class="mode-option">
-          <button class="secondary-btn" data-action="start-mission" data-mission="${key}">${info.label}</button>
-          <p class="small">${info.description}${key === 'moveLimit' ? '<span class="mission-advanced-tag">【上級者向け】</span>' : ''}</p>
-        </div>`).join('')}
+        ${Object.entries(MISSION_INFO).map(([key, info]) => {
+          const badge = key === 'expert' ? '<span class="expert-badge">★EXPERT</span>'
+            : (key === 'hiddenHint' || key === 'moveLimit') ? '<span class="hard-badge">★HARD</span>'
+            : '';
+          return `
+        <div class="mode-option ${key === 'expert' ? 'mode-option-expert' : ''}">
+          <button class="secondary-btn" data-action="start-mission" data-mission="${key}">${info.label}${badge}</button>
+          <p class="small">${info.description}</p>
+        </div>`;
+        }).join('')}
       </div>
     </div>`;
 }
@@ -1736,6 +1763,7 @@ function renderRecords() {
     renderStatItem('まちがいを直せ', `${starIcon}${records.stars.fixTheSwap}`, getCountRecordTier(records.stars.fixTheSwap, 100, 50)),
     renderStatItem('かくされたヒント', `${starIcon}${records.stars.hiddenHint}`, getCountRecordTier(records.stars.hiddenHint, 100, 50)),
     renderStatItem('手数リミット', `${starIcon}${records.stars.moveLimit}`, getCountRecordTier(records.stars.moveLimit, 100, 50)),
+    renderStatItem('エキスパート', `${starIcon}${records.stars.expert}`, getCountRecordTier(records.stars.expert, 100, 50)),
   ];
   appEl.innerHTML = `
     <div class="card">
@@ -1778,7 +1806,9 @@ function renderSettings() {
 // (horizontal and vertical alike) is identical, since it is all one grid
 // rather than several independently-sized ones trying to visually coincide.
 function renderBoardGrid(cols, rows, columnSums, rowProducts, cellsHtml, wrongCols = [], wrongRows = [], hiddenCols = [], hiddenRows = [], highlightCols = [], highlightRows = []) {
-  const track = `clamp(48px, 16vw, 64px)`;
+  // --board-cell-track lets a wrapping .expert-mode container shrink the 4x3
+  // board's cells without touching every other board's fixed size.
+  const track = `var(--board-cell-track, clamp(48px, 16vw, 64px))`;
   return `
     <div class="board-grid" style="grid-template-columns: max-content max-content repeat(${cols}, ${track}); grid-template-rows: max-content max-content repeat(${rows}, ${track});">
       <div class="group-label col-group-label" style="grid-column: 3 / -1; grid-row: 1;">たての和</div>
@@ -1809,6 +1839,7 @@ function renderGame() {
   const boardModeKey = getCurrentBoardModeKey();
   const board = getBoardDefinition(boardModeKey);
   const isMission = appState.mode === 'mission';
+  const isExpertMission = isMission && appState.missionType === 'expert';
   const header = isMission ? MISSION_INFO[appState.missionType].label : (MODE_LABELS[appState.mode] || '');
   const isHiddenHintMission = isMission && appState.missionType === 'hiddenHint';
   let currentRows = appState.currentPuzzle.rowProducts;
@@ -1824,7 +1855,9 @@ function renderGame() {
       currentRows = currentRows.map((value, index) => (index === pair.rowIndex ? '？' : value));
     }
   }
-  const numbers = boardModeKey === 'easy' ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5, 6, 7, 8, 9];
+  const numbers = boardModeKey === 'easy' ? [1, 2, 3, 4, 5, 6]
+    : boardModeKey === 'expert' ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    : [1, 2, 3, 4, 5, 6, 7, 8, 9];
   const selectedIndex = appState.selectedCellIndex;
   const allFilled = appState.boardValues.every((value) => value !== null);
   const noPanel = isNoPanelMission();
@@ -1859,7 +1892,7 @@ function renderGame() {
   }
 
   let hintButton = '';
-  if (appState.mode === 'leisure') {
+  if (appState.mode === 'leisure' || isExpertMission) {
     hintButton = `<button class="ghost-btn" data-action="hint" ${appState.hintCount >= 3 ? 'disabled' : ''}>ヒント${appState.hintCount > 0 ? `(${appState.hintCount}/3)` : ''}</button>`;
   } else if (isMission && (appState.missionType === 'fixTheSwap' || appState.missionType === 'hiddenHint' || appState.missionType === 'moveLimit')) {
     hintButton = `<button class="ghost-btn" data-action="toggle-mission-hint" ${appState.missionHintUsed ? 'disabled' : ''}>ヒント${appState.missionHintUsed ? '(使用済み)' : ''}</button>`;
@@ -1867,8 +1900,15 @@ function renderGame() {
 
   const zoneFlash = appState.showCorrectMark && appState.correctMarkPhase === 'milestone' && appState.milestoneIsZone;
 
+  const boardSizeLabel = getBoardSize(boardModeKey) === '3x2' ? 'イージー 3×2'
+    : getBoardSize(boardModeKey) === '4x3' ? 'エキスパート 4×3'
+    : 'スタンダード 3×3';
+  const panelGridClass = boardModeKey === 'easy' ? 'number-panel-grid3'
+    : boardModeKey === 'expert' ? 'number-panel-grid6'
+    : 'number-panel-grid5';
+
   appEl.innerHTML = `
-    <div class="card game-card ${zoneFlash ? 'zone-flash' : ''}">
+    <div class="card game-card ${zoneFlash ? 'zone-flash' : ''} ${isExpertMission ? 'expert-mode' : ''}">
       <nav class="topbar">
         <button class="back" data-action="back">← もどる</button>
         ${progressBadge ? `<span class="badge">${progressBadge}</span>` : ''}
@@ -1879,15 +1919,16 @@ function renderGame() {
         const col = index % board.cols;
         const fixed = appState.fixedCells.includes(index);
         const selected = index === selectedIndex;
-        return `<button class="board-cell ${fixed ? 'fixed' : ''} ${value !== null ? 'occupied' : ''} ${selected ? 'selected' : ''} ${appState.boardShake ? 'shake' : ''}" style="grid-column: ${col + 3}; grid-row: ${row + 3};" data-action="select-cell" data-index="${index}">
+        const twoDigit = isExpertMission && value !== null && value >= 10;
+        return `<button class="board-cell ${fixed ? 'fixed' : ''} ${value !== null ? 'occupied' : ''} ${selected ? 'selected' : ''} ${appState.boardShake ? 'shake' : ''} ${twoDigit ? 'two-digit' : ''}" style="grid-column: ${col + 3}; grid-row: ${row + 3};" data-action="select-cell" data-index="${index}">
           <span class="cell-value">${value ?? ''}</span>
         </button>`;
       }).join(''), appState.wrongColIndices, appState.wrongRowIndices, hiddenColIndices, hiddenRowIndices)}
       ${noPanel ? '' : `
-      <div class="number-panel ${boardModeKey === 'easy' ? 'number-panel-grid3' : 'number-panel-grid5'}">
+      <div class="number-panel ${panelGridClass}">
         ${numbers.map((number) => {
           const used = appState.boardValues.includes(number);
-          return `<button class="number-chip ${used ? 'used' : ''} ${appState.selectedValue === number ? 'selected' : ''}" data-action="number" data-value="${number}">${number}</button>`;
+          return `<button class="number-chip ${used ? 'used' : ''} ${appState.selectedValue === number ? 'selected' : ''} ${number >= 10 ? 'two-digit' : ''}" data-action="number" data-value="${number}">${number}</button>`;
         }).join('')}
       </div>`}
       <div class="controls">
@@ -1895,7 +1936,7 @@ function renderGame() {
         ${hintButton}
         <button class="primary-btn" data-action="submit" ${allFilled && !appState.showCorrectMark ? '' : 'disabled'}>解答する</button>
       </div>
-      <p class="mode-label">${getBoardSize(boardModeKey) === '3x2' ? 'イージー 3×2' : 'スタンダード 3×3'}　${header}</p>
+      <p class="mode-label">${isExpertMission ? boardSizeLabel : `${boardSizeLabel}　${header}`}</p>
       ${isMission ? `<p class="small mission-guidance">${MISSION_INFO[appState.missionType].description}</p>` : ''}
       <div class="message">${formatMessage(appState.message)}</div>
       ${renderCorrectMarkOverlay()}
@@ -2123,7 +2164,8 @@ function renderResult() {
       <p class="small result-board-label">最終問題の答え</p>
       ${finalAnswerBoardHtml}`;
   } else if (appState.mode === 'mission') {
-    const board = getBoardDefinition('standard');
+    const isExpertMission = appState.missionType === 'expert';
+    const board = getBoardDefinition(isExpertMission ? 'expert' : 'standard');
     const pair = appState.missionType === 'hiddenHint' ? appState.missionHiddenPair : null;
     const completedBoardHtml = renderBoardGrid(
       board.cols,
@@ -2133,7 +2175,8 @@ function renderResult() {
       appState.boardValues.map((value, index) => {
         const row = Math.floor(index / board.cols);
         const col = index % board.cols;
-        return `<div class="board-cell occupied" style="grid-column: ${col + 3}; grid-row: ${row + 3};"><span class="cell-value">${value}</span></div>`;
+        const twoDigit = isExpertMission && value >= 10;
+        return `<div class="board-cell occupied ${twoDigit ? 'two-digit' : ''}" style="grid-column: ${col + 3}; grid-row: ${row + 3};"><span class="cell-value">${value}</span></div>`;
       }).join(''),
       [], [],
       pair ? [pair.colIndex] : [],
@@ -2141,19 +2184,23 @@ function renderResult() {
     );
     const missionStars = STAR_STRINGS[appState.resultStarTier];
     const missionStarGlowClass = missionStars === '★★★' ? (isPerfectMoveClear() ? 'star-rating-perfect star-rating-rainbow' : 'star-rating-perfect') : '';
+    // エキスパートはtier別のほめコメントが主表示、既存のスマートクリア評価
+    // （一発配置/完全推理/ノーミスクリア/ナイスリカバリー）は補助として下に添える。
     inner = `
-      <h2>${MISSION_INFO[appState.missionType].label}　クリア！</h2>
+      <h2>${isExpertMission ? 'エキスパートクリア！' : `${MISSION_INFO[appState.missionType].label}　クリア！`}</h2>
       <p class="star-rating ${missionStarGlowClass}">${missionStars}</p>
       ${appState.resultMissionText ? `<div class="smart-clear-block"><p class="smart-clear-comment">${formatMessage(appState.resultMissionText)}</p></div>` : ''}
+      ${isExpertMission ? renderSmartClearBlock(appState.resultSmartClear, false) : ''}
       ${renderPuzzleKeyBlock(buildCurrentMissionKey())}
       <div class="row">
-        <button class="primary-btn" data-action="play-again">同じミッションをもう1問</button>
+        <button class="primary-btn" data-action="play-again">${isExpertMission ? 'もう1問' : '同じミッションをもう1問'}</button>
         <button class="ghost-btn" data-action="show-missions">ミッション選択へ</button>
         <button class="ghost-btn" data-action="title-again">タイトルへ</button>
       </div>
       ${completedBoardHtml}`;
   }
-  appEl.innerHTML = `<div class="card result-card">${inner}</div>`;
+  const resultCardClass = (appState.mode === 'mission' && appState.missionType === 'expert') ? 'card result-card expert-mode' : 'card result-card';
+  appEl.innerHTML = `<div class="${resultCardClass}">${inner}</div>`;
 }
 
 window.addEventListener('load', init);
