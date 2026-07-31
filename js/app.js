@@ -219,7 +219,10 @@ const appState = {
   missionHintKind: null,
   missionHiddenPair: null,
   missionHiddenRowRevealed: false,
-  missionMoveCount: 0,
+  // How many placement/swap operations the player has made on the current
+  // puzzle - tracked in every mode (see placeValue()/swapCells()), though
+  // only shown on screen (renderGame()) for じっくり and 3 of the 4 missions.
+  moveCount: 0,
   missionMinSwaps: 0,
   missionAllowedMoves: 0,
   resultMissionText: null,
@@ -534,13 +537,13 @@ function handleNumberTap(value) {
 function swapCells(fromIndex, toIndex) {
   if (appState.fixedCells.includes(fromIndex) || appState.fixedCells.includes(toIndex)) return false;
   if (appState.mode === 'mission' && appState.missionType === 'moveLimit') {
-    const remaining = appState.missionAllowedMoves - appState.missionMoveCount;
+    const remaining = appState.missionAllowedMoves - appState.moveCount;
     if (remaining <= 0) {
       appState.message = '移動回数を使い切ったよ。答えを確認するか、リセットしよう！';
       return false;
     }
   }
-  if (appState.mode === 'mission') appState.missionMoveCount += 1;
+  appState.moveCount += 1;
   appState.smartClear.hasExtraMove = true;
   const temp = appState.boardValues[toIndex];
   appState.boardValues[toIndex] = appState.boardValues[fromIndex];
@@ -570,7 +573,7 @@ function placeValue(index, value) {
   } else {
     appState.smartClear.fillCount += 1;
   }
-  if (appState.mode === 'mission') appState.missionMoveCount += 1;
+  appState.moveCount += 1;
   appState.boardValues[index] = value;
   appState.selectedValue = null;
   appState.message = '';
@@ -586,12 +589,13 @@ function resetBoard() {
     // isn't refunded.
     appState.boardValues = appState.missionInitialValues.slice();
     appState.fixedCells = [];
-    appState.missionMoveCount = 0;
+    appState.moveCount = 0;
   } else {
     appState.fixedCells = Array.from(appState.initialFixedCells);
     appState.boardValues = appState.boardValues.map((value, index) => (
       appState.fixedCells.includes(index) ? appState.currentPuzzle.answer[index] : null
     ));
+    appState.moveCount = 0;
   }
   appState.selectedValue = null;
   appState.selectedCellIndex = null;
@@ -738,15 +742,15 @@ function computeStarTier(baseTier) {
 // judged purely on how efficiently the puzzle itself was solved.
 function computeMissionBaseTier() {
   if (appState.missionType === 'threeLeft') {
-    if (appState.missionMoveCount === 3 && appState.resultElapsed <= 10) return 3;
-    if (appState.missionMoveCount === 3) return 2;
+    if (appState.moveCount === 3 && appState.resultElapsed <= 10) return 3;
+    if (appState.moveCount === 3) return 2;
     return 1;
   }
   if (appState.missionType === 'fixTheSwap') {
-    return appState.missionMoveCount === 1 ? 3 : 2;
+    return appState.moveCount === 1 ? 3 : 2;
   }
   if (appState.missionType === 'moveLimit') {
-    return appState.missionMoveCount === appState.missionMinSwaps ? 3 : 2;
+    return appState.moveCount === appState.missionMinSwaps ? 3 : 2;
   }
   // かくされたヒント has no move/time criterion - reaching the result screen
   // at all means it was solved, so it starts at the top tier.
@@ -762,6 +766,19 @@ function recordStars(category, tier) {
 
 function getLeisureStarCategory() {
   return appState.puzzleSize === 'easy' ? 'leisureEasy' : 'leisureStandard';
+}
+
+// True when the just-finished puzzle was solved in the mode's minimum
+// possible number of moves with no reset along the way - the best possible
+// way to earn a ★★★, which gets an extra rainbow glow on top of the usual one.
+function isPerfectMoveClear() {
+  if (appState.mode === 'leisure') return appState.resultSmartClear === 'oneShot';
+  if (appState.mode !== 'mission' || appState.smartClear.resetUsed) return false;
+  if (appState.missionType === 'threeLeft') return appState.moveCount === 3;
+  if (appState.missionType === 'fixTheSwap') return appState.moveCount === 1;
+  if (appState.missionType === 'hiddenHint') return appState.moveCount === 9;
+  if (appState.missionType === 'moveLimit') return appState.moveCount === appState.missionMinSwaps;
+  return false;
 }
 
 // --- Timers ---
@@ -877,6 +894,7 @@ function startGame() {
     appState.threeQuestionSmartTiers = [];
   }
   appState.resultSmartClear = null;
+  appState.moveCount = 0;
   resetSmartClearTracking();
   appState.currentPuzzle = getNextPuzzle();
   applyPuzzleState(createPuzzleState(appState.currentPuzzle, appState.puzzleSize));
@@ -899,6 +917,7 @@ function startChallenge() {
   appState.challengeQuestionNumber = 1;
   appState.challengeMistakeThisPuzzle = false;
   appState.challengeAnyMistake = false;
+  appState.moveCount = 0;
   appState.challengeCombo = 0;
   appState.comboDisplayText = null;
   appState.milestoneDisplayText = null;
@@ -953,7 +972,7 @@ function startMission(missionType) {
   appState.missionHiddenRowRevealed = false;
   appState.missionMistakeRows = [];
   appState.missionMistakeCols = [];
-  appState.missionMoveCount = 0;
+  appState.moveCount = 0;
   appState.missionMinSwaps = 0;
   appState.missionAllowedMoves = 0;
   appState.missionHiddenPair = null;
@@ -1188,6 +1207,7 @@ function finishCorrectFlow() {
       appState.message = '';
       appState.currentPuzzle = getNextPuzzle();
       applyPuzzleState(createPuzzleState(appState.currentPuzzle, appState.puzzleSize));
+      appState.moveCount = 0;
       resetSmartClearTracking();
       appState.timer.reset();
       appState.timer.start();
@@ -1232,6 +1252,7 @@ function finishCorrectFlow() {
     appState.milestoneIsZone = false;
     appState.challengeQuestionNumber += 1;
     appState.challengeMistakeThisPuzzle = false;
+    appState.moveCount = 0;
     appState.currentPuzzle = getNextPuzzle('standard');
     applyPuzzleState(createPuzzleState(appState.currentPuzzle, 'standard', getChallengeFixedCount(appState.challengeQuestionNumber)));
     appState.screen = 'game';
@@ -1268,7 +1289,7 @@ function evaluateMissionResult() {
       parts.push('スピード解答！\nあっという間に正解したね！');
     }
   } else if (appState.missionType === 'fixTheSwap') {
-    if (firstTryClean && appState.missionMoveCount === 1) {
+    if (firstTryClean && appState.moveCount === 1) {
       parts.push('一発修正！\n入れかわった2枚をすぐに見抜いたね！');
     }
   } else if (appState.missionType === 'hiddenHint') {
@@ -1278,11 +1299,15 @@ function evaluateMissionResult() {
       parts.push('ナイスリカバリー！\n間違いを見直して、自分の力で正解に直せたね！');
     } else if (sc.hintUsed) {
       parts.push('推理完了！\nヒントをうまく使って、正解にたどり着いたね！');
+    } else if (appState.moveCount === 9 && !sc.resetUsed) {
+      // Every one of the 9 cells placed exactly once, no reset - same
+      // one-shot achievement じっくり celebrates with this exact text.
+      parts.push('一発配置！\n頭の中でしっかり考えてから、すべての数字を置けたね！');
     } else {
       parts.push('完全正解！\nかくされたヒントがあっても、一度で正しく求められたね！');
     }
   } else if (appState.missionType === 'moveLimit') {
-    if (appState.missionMoveCount === appState.missionMinSwaps) {
+    if (appState.moveCount === appState.missionMinSwaps) {
       parts.push('最短ルート！\nむだのない入れ替えで、見事に完成させたね！');
     } else {
       parts.push('計画的クリア！\n先を考えながら、決められた回数で完成できたね！');
@@ -1816,8 +1841,12 @@ function renderGame() {
   } else if (appState.mode === 'time-attack' || appState.mode === 'three-questions') {
     timerHtml = `<span class="badge timer">${formatLiveTime(appState.timer.getElapsedSeconds())}</span>`;
   } else if (isMission && appState.missionType === 'moveLimit') {
-    const remainingMoves = Math.max(0, appState.missionAllowedMoves - appState.missionMoveCount);
+    const remainingMoves = Math.max(0, appState.missionAllowedMoves - appState.moveCount);
     timerHtml = `<span class="badge timer">のこり移動回数　${remainingMoves}回</span>`;
+  } else if (appState.mode === 'leisure' || (isMission && (appState.missionType === 'threeLeft' || appState.missionType === 'fixTheSwap' || appState.missionType === 'hiddenHint'))) {
+    // No timer or move-limit already occupies this slot for these modes, so
+    // it's free to show a running move count instead.
+    timerHtml = `<span class="badge timer">手数　${appState.moveCount}手</span>`;
   } else {
     timerHtml = '';
   }
@@ -1901,6 +1930,16 @@ const RANK_TIER_CLASS = {
   F: 'rank-tier-calm',
 };
 
+// How many of the 9 stars are filled in for each rank's badge (see
+// renderEvaluationBlock() - MAX is 9/9 down to F at 1/9).
+const RANK_STAR_COUNTS = { MAX: 9, SS: 8, S: 7, A: 6, B: 5, C: 4, D: 3, E: 2, F: 1 };
+const RANK_BADGE_GLOW_CLASS = { MAX: 'rank-badge-rainbow', SS: 'rank-badge-glow', S: 'rank-badge-glow' };
+
+function buildRankStarString(rank) {
+  const filled = RANK_STAR_COUNTS[rank] || 0;
+  return '★'.repeat(filled) + '☆'.repeat(9 - filled);
+}
+
 // A single labelled stat tile used across the time-attack result screens.
 function renderStatItem(label, value, extraClass = '') {
   return `<div class="stat-item ${extraClass}"><span class="stat-label">${label}</span><span class="stat-value">${value}</span></div>`;
@@ -1911,10 +1950,11 @@ function renderStatItem(label, value, extraClass = '') {
 function renderEvaluationBlock(evaluation) {
   if (!evaluation) return '';
   const tierClass = RANK_TIER_CLASS[evaluation.rank] || '';
+  const badgeGlowClass = RANK_BADGE_GLOW_CLASS[evaluation.rank] || '';
   return `
     <div class="rank-block ${tierClass}">
-      <p class="rank-badge">ランク ${evaluation.rank}</p>
       <p class="rank-title">${evaluation.title}</p>
+      <p class="rank-badge ${badgeGlowClass}">${buildRankStarString(evaluation.rank)}</p>
       <p class="rank-comment">${evaluation.comment}</p>
     </div>`;
 }
@@ -1982,10 +2022,11 @@ function renderResult() {
       }).join(''),
     );
     const stars = STAR_STRINGS[appState.resultStarTier];
+    const starGlowClass = stars === '★★★' ? (isPerfectMoveClear() ? 'star-rating-perfect star-rating-rainbow' : 'star-rating-perfect') : '';
     inner = `
       <div class="result-title-row">
         <h2>正解！</h2>
-        <p class="star-rating ${stars === '★★★' ? 'star-rating-perfect' : ''}">${stars}</p>
+        <p class="star-rating ${starGlowClass}">${stars}</p>
       </div>
       ${appState.resultSmartClear ? '' : '<p class="small">よく考えたね！</p>'}
       ${renderSmartClearBlock(appState.resultSmartClear, false)}
@@ -2099,9 +2140,10 @@ function renderResult() {
       pair ? [pair.rowIndex] : [],
     );
     const missionStars = STAR_STRINGS[appState.resultStarTier];
+    const missionStarGlowClass = missionStars === '★★★' ? (isPerfectMoveClear() ? 'star-rating-perfect star-rating-rainbow' : 'star-rating-perfect') : '';
     inner = `
       <h2>${MISSION_INFO[appState.missionType].label}　クリア！</h2>
-      <p class="star-rating ${missionStars === '★★★' ? 'star-rating-perfect' : ''}">${missionStars}</p>
+      <p class="star-rating ${missionStarGlowClass}">${missionStars}</p>
       ${appState.resultMissionText ? `<div class="smart-clear-block"><p class="smart-clear-comment">${formatMessage(appState.resultMissionText)}</p></div>` : ''}
       ${renderPuzzleKeyBlock(buildCurrentMissionKey())}
       <div class="row">
