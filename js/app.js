@@ -102,12 +102,16 @@ const TIME_ATTACK_RANKS = [
 // Smart-clear evaluation: how cleanly the player reached the correct answer,
 // independent of time. Priority order (best to worst) is oneShot > perfectLogic
 // > noMistake > recovery - only the single best-matching tier is ever shown.
-const SMART_CLEAR_TIER_RANK = { oneShot: 4, perfectLogic: 3, noMistake: 2, recovery: 1 };
+const SMART_CLEAR_TIER_RANK = { oneShot: 5, nearOneShot: 4, perfectLogic: 3, noMistake: 2, recovery: 1 };
 
 const SMART_CLEAR_INFO = {
   oneShot: {
     comment: '一発配置！\n頭の中でしっかり考えてから、すべての数字を置けたね！',
     tripleComment: '3問すべて一発配置！先を読む力と正確さがすばらしい！',
+  },
+  nearOneShot: {
+    comment: 'ほぼ最短手数！\nムダの少ない動かし方で、スマートに正解できたね！',
+    tripleComment: '3問ともほぼ最短手数！ムダの少ない動かし方が光ったね！',
   },
   perfectLogic: {
     comment: '完全推理！\n積と和を手がかりに、自分の力だけで答えを導き出したね！',
@@ -134,7 +138,14 @@ function evaluateSmartClear() {
   const sc = appState.smartClear;
   if (sc.wrongSubmitted) return 'recovery';
   if (!sc.hintUsed && !sc.resetUsed) {
-    return sc.hasExtraMove ? 'perfectLogic' : 'oneShot';
+    if (!sc.hasExtraMove) return 'oneShot';
+    // hasExtraMove alone doesn't say by how much moveCount overshot the
+    // minimum (every cell filled exactly once, none pre-fixed) - a single
+    // wasted move still deserves a step up from the generic "perfectLogic"
+    // comment below.
+    const board = getBoardDefinition(getCurrentBoardModeKey());
+    const minimumMoves = (board.rows * board.cols) - appState.initialFixedCells.length;
+    return appState.moveCount === minimumMoves + 1 ? 'nearOneShot' : 'perfectLogic';
   }
   return 'noMistake';
 }
@@ -695,6 +706,7 @@ function useHint() {
   appState.boardValues[targetIndex] = hintValue;
   appState.fixedCells.push(targetIndex);
   appState.hintCount += 1;
+  appState.moveCount += 1;
   appState.smartClear.hintUsed = true;
   render();
 }
@@ -1065,7 +1077,7 @@ function startMission(missionType) {
     puzzleState = { values: setup.values, fixed: [] };
     appState.missionInitialValues = setup.values.slice();
     appState.missionMinSwaps = setup.minSwaps;
-    appState.missionAllowedMoves = setup.minSwaps + 1;
+    appState.missionAllowedMoves = setup.minSwaps + 2;
   }
   appState.currentPuzzle = puzzle;
   applyPuzzleState(puzzleState);
@@ -1128,6 +1140,7 @@ function useMissionHint() {
     appState.fixedCells.push(targetIndex);
     appState.missionHintUsed = true;
     appState.smartClear.hintUsed = true;
+    appState.moveCount += 1;
     render();
   }
 }
@@ -1363,6 +1376,10 @@ function evaluateMissionResult() {
       // Every one of the 9 cells placed exactly once, no reset - same
       // one-shot achievement じっくり celebrates with this exact text.
       parts.push('一発配置！\n頭の中でしっかり考えてから、すべての数字を置けたね！');
+    } else if (appState.moveCount === 10 && !sc.resetUsed) {
+      // Exactly 1 move over the 9-cell minimum - a near-miss worth its own
+      // step up from the generic 完全正解 text below.
+      parts.push('ほぼ最短手数！\nムダの少ない動かし方で、スマートに正解できたね！');
     } else {
       parts.push('完全正解！\nかくされたヒントがあっても、一度で正しく求められたね！');
     }
