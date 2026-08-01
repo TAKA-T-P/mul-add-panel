@@ -177,6 +177,5 @@ nav.topbar { display:flex; justify-content:space-between; align-items:center; ga
 .expert-mode .number-chip { width: min(11vw, 42px); height: min(11vw, 42px); max-width: 42px; max-height: 42px; font-size: 1.05rem; font-variant-numeric: tabular-nums; aspect-ratio: 1 / 1; }
 .expert-mode .number-chip.two-digit { font-size: 0.86em; letter-spacing: -0.04em; }
 
-.mode-option-expert .secondary-btn { position: relative; border: 2px solid var(--gold); box-shadow: 0 0 0 2px rgba(242,184,75,0.18); }
 .expert-badge { display:inline-block; margin-left: 6px; font-size: 0.62em; font-weight: 900; color: #fff; background: linear-gradient(135deg, #f76b6b, #dc2626); padding: 2px 7px; border-radius: 999px; vertical-align: middle; letter-spacing: 0.02em; }
 .hard-badge { display:inline-block; margin-left: 6px; font-size: 0.62em; font-weight: 900; color: #fff; background: linear-gradient(135deg, #ffb066, #e8720c); padding: 2px 7px; border-radius: 999px; vertical-align: middle; letter-spacing: 0.02em; }

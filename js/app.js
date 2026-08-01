@@ -8,10 +8,10 @@ const MODE_LABELS = {
 };
 
 const MISSION_INFO = {
-  threeLeft: { label: 'あと3マス', description: '超おてがる！残り3枚を正しい場所に入れよう！' },
-  fixTheSwap: { label: 'まちがいを直せ', description: '2枚の数字が入れかわっているよ。正しく直そう！' },
-  hiddenHint: { label: 'かくされたヒント', description: 'かくされた数字を推理して、全部のマスをうめよう！' },
-  moveLimit: { label: '手数リミット', description: '決められた回数以内に、入れ替えだけで完成させよう！' },
+  threeLeft: { label: 'あと3マス', description: '超おてがる！3枚を正しい場所に入れよう！' },
+  fixTheSwap: { label: 'まちがいを直せ', description: '入れかわった2枚の数字を正しく直そう！' },
+  hiddenHint: { label: 'かくされたヒント', description: '数字を推理して、全部のマスをうめよう！' },
+  moveLimit: { label: '手数リミット', description: '指定の回数しか、入れかえができないぞ！' },
   expert: { label: 'エキスパート', description: '1～12を使う4×3の超上級パズル！' },
 };
 
@@ -610,9 +610,15 @@ function resetBoard() {
   render();
 }
 
+// じっくりは最大3回、エキスパートは1回のみ - useHint()と手数バッジ両方が参照する。
+function getHintLimit() {
+  return (appState.mode === 'mission' && appState.missionType === 'expert') ? 1 : 3;
+}
+
 function useHint() {
   const isExpertMission = appState.mode === 'mission' && appState.missionType === 'expert';
-  if ((appState.mode !== 'leisure' && !isExpertMission) || appState.hintCount >= 3) return;
+  const hintLimit = getHintLimit();
+  if ((appState.mode !== 'leisure' && !isExpertMission) || appState.hintCount >= hintLimit) return;
   const answer = appState.currentPuzzle.answer;
   const emptyIndex = appState.boardValues.findIndex((value) => value === null);
 
@@ -778,7 +784,7 @@ function getLeisureStarCategory() {
 function isPerfectMoveClear() {
   if (appState.mode === 'leisure') return appState.resultSmartClear === 'oneShot';
   if (appState.mode !== 'mission' || appState.smartClear.resetUsed) return false;
-  if (appState.missionType === 'expert') return !appState.smartClear.hintUsed;
+  if (appState.missionType === 'expert') return appState.moveCount === 12;
   if (appState.missionType === 'threeLeft') return appState.moveCount === 3;
   if (appState.missionType === 'fixTheSwap') return appState.moveCount === 1;
   if (appState.missionType === 'hiddenHint') return appState.moveCount === 9;
@@ -1649,7 +1655,7 @@ function renderMissionSelect() {
             : (key === 'hiddenHint' || key === 'moveLimit') ? '<span class="hard-badge">★HARD</span>'
             : '';
           return `
-        <div class="mode-option ${key === 'expert' ? 'mode-option-expert' : ''}">
+        <div class="mode-option">
           <button class="secondary-btn" data-action="start-mission" data-mission="${key}">${info.label}${badge}</button>
           <p class="small">${info.description}</p>
         </div>`;
@@ -1876,7 +1882,7 @@ function renderGame() {
   } else if (isMission && appState.missionType === 'moveLimit') {
     const remainingMoves = Math.max(0, appState.missionAllowedMoves - appState.moveCount);
     timerHtml = `<span class="badge timer">のこり移動回数　${remainingMoves}回</span>`;
-  } else if (appState.mode === 'leisure' || (isMission && (appState.missionType === 'threeLeft' || appState.missionType === 'fixTheSwap' || appState.missionType === 'hiddenHint'))) {
+  } else if (appState.mode === 'leisure' || (isMission && (appState.missionType === 'threeLeft' || appState.missionType === 'fixTheSwap' || appState.missionType === 'hiddenHint' || appState.missionType === 'expert'))) {
     // No timer or move-limit already occupies this slot for these modes, so
     // it's free to show a running move count instead.
     timerHtml = `<span class="badge timer">手数　${appState.moveCount}手</span>`;
@@ -1893,7 +1899,8 @@ function renderGame() {
 
   let hintButton = '';
   if (appState.mode === 'leisure' || isExpertMission) {
-    hintButton = `<button class="ghost-btn" data-action="hint" ${appState.hintCount >= 3 ? 'disabled' : ''}>ヒント${appState.hintCount > 0 ? `(${appState.hintCount}/3)` : ''}</button>`;
+    const hintLimit = getHintLimit();
+    hintButton = `<button class="ghost-btn" data-action="hint" ${appState.hintCount >= hintLimit ? 'disabled' : ''}>ヒント${appState.hintCount > 0 ? `(${appState.hintCount}/${hintLimit})` : ''}</button>`;
   } else if (isMission && (appState.missionType === 'fixTheSwap' || appState.missionType === 'hiddenHint' || appState.missionType === 'moveLimit')) {
     hintButton = `<button class="ghost-btn" data-action="toggle-mission-hint" ${appState.missionHintUsed ? 'disabled' : ''}>ヒント${appState.missionHintUsed ? '(使用済み)' : ''}</button>`;
   }
@@ -2068,6 +2075,7 @@ function renderResult() {
       <div class="result-title-row">
         <h2>正解！</h2>
         <p class="star-rating ${starGlowClass}">${stars}</p>
+        <span class="badge">手数　${appState.moveCount}手</span>
       </div>
       ${appState.resultSmartClear ? '' : '<p class="small">よく考えたね！</p>'}
       ${renderSmartClearBlock(appState.resultSmartClear, false)}
@@ -2188,7 +2196,10 @@ function renderResult() {
     // （一発配置/完全推理/ノーミスクリア/ナイスリカバリー）は補助として下に添える。
     inner = `
       <h2>${isExpertMission ? 'エキスパートクリア！' : `${MISSION_INFO[appState.missionType].label}　クリア！`}</h2>
-      <p class="star-rating ${missionStarGlowClass}">${missionStars}</p>
+      <div class="result-title-row">
+        <p class="star-rating ${missionStarGlowClass}">${missionStars}</p>
+        <span class="badge">手数　${appState.moveCount}手</span>
+      </div>
       ${appState.resultMissionText ? `<div class="smart-clear-block"><p class="smart-clear-comment">${formatMessage(appState.resultMissionText)}</p></div>` : ''}
       ${isExpertMission ? renderSmartClearBlock(appState.resultSmartClear, false) : ''}
       ${renderPuzzleKeyBlock(buildCurrentMissionKey())}
