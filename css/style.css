@@ -94,6 +94,9 @@ nav.topbar { display:flex; justify-content:space-between; align-items:center; ga
 .correct-mark-overlay { position: absolute; inset: 0; display:flex; align-items:center; justify-content:center; z-index: 5; pointer-events: none; }
 .correct-mark { font-size: 12rem; font-weight: 900; line-height: 1; color: rgba(37,99,235,0.72); -webkit-text-stroke: 6px rgba(37,99,235,0.72); text-shadow: 0 8px 28px rgba(37,99,235,0.5); animation: countdownPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
 .result-card { text-align: center; }
+/* じっくりの見出しは .result-title-row 内(margin:0)にあり対象外 - それ以外の
+   結果画面見出しはブラウザ既定のh2余白がそのまま出て隙間が広く見えるため縮める。 */
+.result-card > h2 { margin: 0 0 8px; }
 .record-badge { color: #b8860b; font-weight: 800; background: rgba(242,184,75,0.18); border-radius: 14px; padding: 8px 12px; margin: 8px 0; }
 .rank-block { margin: 12px 0; padding: 14px; border-radius: 18px; text-align: center; }
 .rank-badge { font-size: clamp(1rem, 6.2vw, 1.55rem); font-weight: 900; margin: 4px 0 2px; letter-spacing: 0.01em; color: var(--gold); white-space: nowrap; }
