@@ -224,6 +224,12 @@ const appState = {
   // puzzle - tracked in every mode (see placeValue()/swapCells()), though
   // only shown on screen (renderGame()) for じっくり and 3 of the 4 missions.
   moveCount: 0,
+  // Snapshot of {boardValues, moveCount, hasExtraMove, fillCount} captured
+  // right before the most recent placeValue()/swapCells() mutation - only
+  // ever one level deep (undoLastMove() clears it after use, so a second
+  // undo in a row is a no-op until another move re-arms it). null whenever
+  // there's nothing to undo (fresh puzzle, just reset, or already undone).
+  moveHistory: null,
   missionMinSwaps: 0,
   missionAllowedMoves: 0,
   resultMissionText: null,
@@ -368,6 +374,7 @@ function handleClick(event) {
     case 'select-cell': { const cellIndex = Number(actionEl.dataset.index); handleCellTap(cellIndex); break; }
     case 'number': { const value = Number(actionEl.dataset.value); handleNumberTap(value); break; }
     case 'reset': resetBoard(); break;
+    case 'undo-move': undoLastMove(); break;
     case 'hint': useHint(); break;
     case 'submit':
       // submitAnswer()'s own paths (startReveal / onWrongAnswer) already
@@ -533,6 +540,19 @@ function handleNumberTap(value) {
   render();
 }
 
+// Captures the one piece of state 1手もどす needs to undo whichever of
+// placeValue()/swapCells() is about to run - called right after each
+// function's own refusal checks pass, so a rejected move never overwrites
+// the still-valid snapshot of the last one that actually happened.
+function captureMoveSnapshot() {
+  appState.moveHistory = {
+    boardValues: appState.boardValues.slice(),
+    moveCount: appState.moveCount,
+    hasExtraMove: appState.smartClear.hasExtraMove,
+    fillCount: appState.smartClear.fillCount,
+  };
+}
+
 // Returns whether the swap actually happened (false if refused, e.g. a
 // fixed-cell target or an exhausted 手数リミット move budget) so callers
 // know whether it's safe to clear appState.message.
@@ -545,6 +565,7 @@ function swapCells(fromIndex, toIndex) {
       return false;
     }
   }
+  captureMoveSnapshot();
   appState.moveCount += 1;
   appState.smartClear.hasExtraMove = true;
   const temp = appState.boardValues[toIndex];
@@ -567,6 +588,7 @@ function placeValue(index, value) {
   // can't be relocated, so refuse the placement instead of overwriting it.
   if (existingIndex >= 0 && appState.fixedCells.includes(existingIndex)) return;
   const existingValue = appState.boardValues[index];
+  captureMoveSnapshot();
   if (existingIndex >= 0 && existingIndex !== index) {
     appState.boardValues[existingIndex] = existingValue;
     appState.smartClear.hasExtraMove = true;
@@ -605,8 +627,28 @@ function resetBoard() {
   appState.message = '';
   appState.wrongRowIndices = [];
   appState.wrongColIndices = [];
+  appState.moveHistory = null;
   appState.smartClear.resetUsed = true;
   if (appState.mode === 'challenge') appState.challengeCombo = 0;
+  render();
+}
+
+// Reverts the single most recent placeValue()/swapCells() call using the
+// snapshot captureMoveSnapshot() took right before it. No star-tier penalty
+// (resetUsed/wrongSubmitted are untouched) - it's meant to feel like taking
+// the move back, not like a mistake. Clears the snapshot afterward so a
+// second press in a row is a no-op until another move re-arms it.
+function undoLastMove() {
+  const snapshot = appState.moveHistory;
+  if (!snapshot) return;
+  appState.boardValues = snapshot.boardValues;
+  appState.moveCount = snapshot.moveCount;
+  appState.smartClear.hasExtraMove = snapshot.hasExtraMove;
+  appState.smartClear.fillCount = snapshot.fillCount;
+  appState.moveHistory = null;
+  appState.selectedValue = null;
+  appState.selectedCellIndex = null;
+  appState.message = '';
   render();
 }
 
@@ -672,6 +714,7 @@ function applyPuzzleState(puzzleState) {
   appState.selectedCellIndex = null;
   appState.wrongRowIndices = [];
   appState.wrongColIndices = [];
+  appState.moveHistory = null;
 }
 
 function getChallengeFixedCount(questionNumber) {
@@ -1811,12 +1854,13 @@ function renderSettings() {
 // labels line up exactly with their column/row and that every inter-cell gap
 // (horizontal and vertical alike) is identical, since it is all one grid
 // rather than several independently-sized ones trying to visually coincide.
-function renderBoardGrid(cols, rows, columnSums, rowProducts, cellsHtml, wrongCols = [], wrongRows = [], hiddenCols = [], hiddenRows = [], highlightCols = [], highlightRows = []) {
+function renderBoardGrid(cols, rows, columnSums, rowProducts, cellsHtml, wrongCols = [], wrongRows = [], hiddenCols = [], hiddenRows = [], highlightCols = [], highlightRows = [], topLeftHtml = '') {
   // --board-cell-track lets a wrapping .expert-mode container shrink the 4x3
   // board's cells without touching every other board's fixed size.
   const track = `var(--board-cell-track, clamp(48px, 16vw, 64px))`;
   return `
     <div class="board-grid" style="grid-template-columns: max-content max-content repeat(${cols}, ${track}); grid-template-rows: max-content max-content repeat(${rows}, ${track});">
+      ${topLeftHtml ? `<div class="board-top-left-slot" style="grid-column: 1 / 3; grid-row: 1;">${topLeftHtml}</div>` : ''}
       <div class="group-label col-group-label" style="grid-column: 3 / -1; grid-row: 1;">たての和</div>
       ${columnSums.map((value, i) => `<div class="axis-label col-label ${wrongCols.includes(i) ? 'wrong' : ''} ${hiddenCols.includes(i) ? 'hidden-mystery' : ''} ${highlightCols.includes(i) ? 'highlight' : ''}" style="grid-column: ${i + 3}; grid-row: 2;">${value}</div>`).join('')}
       <div class="group-label row-group-label" style="grid-column: 1; grid-row: 3 / -1;">横の積</div>
@@ -1867,6 +1911,11 @@ function renderGame() {
   const selectedIndex = appState.selectedCellIndex;
   const allFilled = appState.boardValues.every((value) => value !== null);
   const noPanel = isNoPanelMission();
+  // 手数リミット: 移動回数を使い切ったのにまだ正解していない = このままでは
+  // クリアできない、というサインとしてリセットボタンを目立たせる。
+  const moveLimitExhausted = isMission && appState.missionType === 'moveLimit'
+    && appState.missionAllowedMoves - appState.moveCount <= 0
+    && !appState.boardValues.every((value, index) => value === appState.currentPuzzle.answer[index]);
 
   let timerHtml;
   if (appState.mode === 'challenge') {
@@ -1930,7 +1979,7 @@ function renderGame() {
         return `<button class="board-cell ${fixed ? 'fixed' : ''} ${value !== null ? 'occupied' : ''} ${selected ? 'selected' : ''} ${appState.boardShake ? 'shake' : ''} ${twoDigit ? 'two-digit' : ''}" style="grid-column: ${col + 3}; grid-row: ${row + 3};" data-action="select-cell" data-index="${index}">
           <span class="cell-value">${value ?? ''}</span>
         </button>`;
-      }).join(''), appState.wrongColIndices, appState.wrongRowIndices, hiddenColIndices, hiddenRowIndices)}
+      }).join(''), appState.wrongColIndices, appState.wrongRowIndices, hiddenColIndices, hiddenRowIndices, [], [], `<button class="ghost-btn small-btn board-reset-btn ${moveLimitExhausted ? 'alert' : ''}" data-action="reset" ${appState.moveCount === 0 ? 'disabled' : ''}>リセット</button>`)}
       ${noPanel ? '' : `
       <div class="number-panel ${panelGridClass}">
         ${numbers.map((number) => {
@@ -1939,8 +1988,8 @@ function renderGame() {
         }).join('')}
       </div>`}
       <div class="controls">
-        <button class="ghost-btn" data-action="reset">リセット</button>
         ${hintButton}
+        <button class="ghost-btn" data-action="undo-move" ${appState.moveHistory ? '' : 'disabled'}>1手もどす</button>
         <button class="primary-btn" data-action="submit" ${allFilled && !appState.showCorrectMark ? '' : 'disabled'}>解答する</button>
       </div>
       <p class="mode-label">${isExpertMission ? boardSizeLabel : `${boardSizeLabel}　${header}`}</p>
